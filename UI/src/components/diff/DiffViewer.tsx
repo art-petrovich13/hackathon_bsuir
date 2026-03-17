@@ -1,5 +1,6 @@
 // src/components/diff/DiffViewer.tsx
 import DiffBlock from "./DiffBlock";
+import SidePanel from "./SidePanel";
 import { useUiStore } from "../../store/uiStore";
 import type { DiffResult } from "../../types";
 
@@ -48,19 +49,25 @@ export default function DiffViewer({ diffResults }: DiffViewerProps) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-gray-500">
-        Показано <span className="font-semibold text-gray-800">{filtered.length}</span> из{" "}
-        <span className="font-semibold text-gray-800">{diffResults.length}</span> изменений
-      </p>
-      {filtered.map((result) => (
-        <DiffBlock
-          key={result.id}
-          result={result}
-          isSelected={selectedDiffId === result.id}
-          onClick={() => openSidePanel(result.id)}
-        />
-      ))}
-    </div>
+    <>
+      {/* Список изменений */}
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-gray-500">
+          Показано <span className="font-semibold text-gray-800">{filtered.length}</span> из{" "}
+          <span className="font-semibold text-gray-800">{diffResults.length}</span> изменений
+        </p>
+        {filtered.map((result) => (
+          <DiffBlock
+            key={result.id}
+            result={result}
+            isSelected={selectedDiffId === result.id}
+            onClick={() => openSidePanel(result.id)}
+          />
+        ))}
+      </div>
+
+      {/* SidePanel — рендерится поверх всего */}
+      <SidePanel diffResults={filtered} />
+    </>
   );
 }
