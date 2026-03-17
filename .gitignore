@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Alembic кеш
+*.pyc
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.production
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# Отчёты (генерируются в runtime)
+backend/tmp/
+*.docx
+
+# IDE
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db
+
+# Секреты (НИКОГДА не коммитить)
+*.pem
+*.key

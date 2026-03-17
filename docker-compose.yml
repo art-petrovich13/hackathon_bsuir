@@ -1,0 +1,80 @@
+version: "3.9"
+
+services:
+
+  # ─── PostgreSQL с pgvector ────────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16     # Этот образ уже содержит pgvector — не нужно устанавливать вручную
+    container_name: npa_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # данные сохраняются между перезапусками контейнера
+    ports:
+      - "5432:5432"                              # пробрасываем порт чтобы можно было подключиться локально (DBeaver/pgAdmin)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ─── Redis (брокер задач для Celery) ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: npa_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─── FastAPI Backend ───────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: npa_backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload  # --reload = hot-reload при изменении файлов
+    env_file:
+      - .env                   # все переменные из .env доступны внутри контейнера
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app         # монтируем код — изменения файлов сразу видны без пересборки
+      - /app/venv              # исключаем локальный venv — контейнер использует свой Python
+    depends_on:
+      postgres:
+        condition: service_healthy   # backend стартует только когда postgres готов принимать соединения
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── Celery Worker (асинхронная обработка задач) ──────────────────────────────
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: npa_celery
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+      - /app/venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+# ─── Именованные тома ─────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
