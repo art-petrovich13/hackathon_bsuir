@@ -11,7 +11,7 @@ interface UiStore {
   filters: FilterState;
 
   // Активная вкладка на ComparePage
-  activeTab: "diff" | "table" | "dashboard" | "prosecutor";
+  activeTab: "diff" | "dashboard" | "prosecutor";
 
   // Actions
   openSidePanel: (diffId: string) => void;
@@ -44,4 +44,5 @@ export const useUiStore = create<UiStore>((set) => ({
 
   resetFilters: () => set({ filters: defaultFilters }),
   setActiveTab: (tab) => set({ activeTab: tab }),
+ 
 }));

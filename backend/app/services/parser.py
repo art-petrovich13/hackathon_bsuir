@@ -54,7 +54,15 @@ class DocumentParser:
         current_path_stack: list[DocumentNode] = []  # стек текущих родителей
 
         for paragraph in doc.paragraphs:
-            text = paragraph.text.strip()
+            
+            raw = paragraph.text
+
+            try:
+                text = raw.encode("latin-1").decode("utf-8")
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                text = raw
+            text = text.strip()
+
             if not text:
                 continue
 

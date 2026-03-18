@@ -153,3 +153,15 @@ export interface FilterState {
   semanticTypes: SemanticType[];
   searchQuery: string;
 }
+
+export type WordDiffTag = "equal" | "replace" | "insert" | "delete";
+
+export interface WordDiffChunk {
+  tag: WordDiffTag;
+  oldWords: string[];
+  newWords: string[];
+}
+
+// ─── Вкладки ComparePage ──────────────────────────────────────────────────────
+
+export type CompareTab = "diff" | "dashboard" | "prosecutor";
