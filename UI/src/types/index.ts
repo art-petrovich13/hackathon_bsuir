@@ -164,4 +164,4 @@ export interface WordDiffChunk {
 
 // ─── Вкладки ComparePage ──────────────────────────────────────────────────────
 
-export type CompareTab = "diff" | "dashboard" | "prosecutor";
+export type CompareTab = "diff" | "table" | "dashboard" | "prosecutor";

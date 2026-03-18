@@ -1,12 +1,14 @@
 // src/pages/ComparePage.tsx
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Download, Scale, BarChart3, List } from "lucide-react";
+import { ArrowLeft, Download, Scale, BarChart3, List, LayoutList } from "lucide-react";
 import { useComparison } from "../hooks/useComparison";
 import ProgressStepper from "../components/upload/ProgressStepper";
 import DiffViewer from "../components/diff/DiffViewer";
 import RiskDashboard from "../components/risk/RiskDashboard";
 import { useUiStore } from "../store/uiStore";
-import { getReportDownloadUrl } from "../api/report";
+import ChangesTable from "../components/diff/ChangesTable";
+import RiskTimeline from "../components/risk/RiskTimeline";
+import SidePanel from "../components/diff/SidePanel";
 import type { CompareTab } from "../types";
 
 const RISK_FILTERS = [
@@ -16,10 +18,10 @@ const RISK_FILTERS = [
   { level: "LOW"      as const, label: "Низкий",       colorClass: "bg-green-100 text-green-700 border-green-200" },
 ];
 
-// Конфигурация вкладок
 const TABS: Array<{ id: CompareTab; label: string; icon: React.FC<{ className?: string }> }> = [
-  { id: "diff",       label: "Изменения",  icon: List },
-  { id: "dashboard",  label: "Dashboard",  icon: BarChart3 },
+  { id: "diff",       label: "Изменения",   icon: List },
+  { id: "table",      label: "Таблица",     icon: LayoutList },
+  { id: "dashboard",  label: "Dashboard",   icon: BarChart3 },
   { id: "prosecutor", label: "⚖️ ПРОКУРОР", icon: Scale },
 ];
 
@@ -95,14 +97,13 @@ export default function ComparePage() {
                 ⚠ {criticalHigh} рисков
               </span>
             )}
-            <a
-              href={getReportDownloadUrl(id!)}
+            <Link
+              to={`/report/${id}`}
               className="btn-secondary inline-flex items-center gap-2 text-sm py-1.5"
-              download
             >
               <Download className="w-4 h-4" />
               Отчёт .docx
-            </a>
+            </Link>
           </div>
         )}
       </div>
@@ -193,6 +194,14 @@ export default function ComparePage() {
             </>
           )}
 
+          {/* Вкладка: Таблица */}
+          {activeTab === "table" && comparison.diffResults && (
+            <div className="space-y-5">
+              <RiskTimeline diffResults={comparison.diffResults} />
+              <ChangesTable diffResults={comparison.diffResults} />
+            </div>
+          )}
+
           {/* Вкладка: Dashboard */}
           {activeTab === "dashboard" && (
             <RiskDashboard comparison={comparison} />
@@ -219,6 +228,11 @@ export default function ComparePage() {
                 </p>
               )}
             </div>
+          )}
+
+          {/* SidePanel — рендерится поверх всего, нужен на всех вкладках */}
+          {comparison.diffResults && (
+            <SidePanel diffResults={comparison.diffResults} />
           )}
         </>
       )}
