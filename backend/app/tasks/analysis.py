@@ -24,8 +24,8 @@ def _run_async(coro):
     bind=True,
     name="analyze_comparison",
     max_retries=2,
-    soft_time_limit=300,
-    time_limit=360,
+    soft_time_limit=600,
+    time_limit=660,
 )
 def analyze_comparison(self: Task, comparison_id: str):
     return _run_async(_analyze_async(self, comparison_id))
@@ -114,18 +114,18 @@ async def _analyze_async(task: Task, comparison_id: str):
         # ─── ЭТАП 3: AI ANALYZING ─────────────────────────────────────────────
         ai_analyses = []
 
-        if raw_changes and settings.gemini_api_key:
+        # ИСПРАВЛЕНО: проверяем openrouter_api_key вместо gemini_api_key
+        if raw_changes and settings.openrouter_api_key:
             try:
                 analyzer = GeminiAnalyzer()
                 ai_analyses = await analyzer.analyze_batch(raw_changes)
                 await set_status("ANALYZING", 80, "AI анализ завершён. Сохраняем результаты...")
             except Exception as e:
                 print(f"AI анализ упал: {e}. Продолжаем без AI.")
-                # Создать фолбэк анализы
                 analyzer = GeminiAnalyzer()
                 ai_analyses = [analyzer._fallback_analysis(c) for c in raw_changes]
         else:
-            # Без ключа Gemini — фолбэк
+            # Без ключа OpenRouter — фолбэк
             if raw_changes:
                 analyzer = GeminiAnalyzer()
                 ai_analyses = [analyzer._fallback_analysis(c) for c in raw_changes]
