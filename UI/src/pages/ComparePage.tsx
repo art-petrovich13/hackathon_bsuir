@@ -1,12 +1,17 @@
 // src/pages/ComparePage.tsx
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Download, Scale, BarChart3, List } from "lucide-react";
+import { ArrowLeft, Download, Scale, BarChart3, List, LayoutList } from "lucide-react";
 import { useComparison } from "../hooks/useComparison";
 import ProgressStepper from "../components/upload/ProgressStepper";
 import DiffViewer from "../components/diff/DiffViewer";
 import RiskDashboard from "../components/risk/RiskDashboard";
 import { useUiStore } from "../store/uiStore";
-import { getReportDownloadUrl } from "../api/report";
+import ChangesTable from "../components/diff/ChangesTable";
+import RiskTimeline from "../components/risk/RiskTimeline";
+import SidePanel from "../components/diff/SidePanel";
+import { useProsecutor } from "../hooks/useProsecutor";
+import ProsecutorAlert from "../components/risk/ProsecutorAlert";
+import RiskBadge from "../components/risk/RiskBadge";
 import type { CompareTab } from "../types";
 
 const RISK_FILTERS = [
@@ -16,10 +21,10 @@ const RISK_FILTERS = [
   { level: "LOW"      as const, label: "Низкий",       colorClass: "bg-green-100 text-green-700 border-green-200" },
 ];
 
-// Конфигурация вкладок
 const TABS: Array<{ id: CompareTab; label: string; icon: React.FC<{ className?: string }> }> = [
-  { id: "diff",       label: "Изменения",  icon: List },
-  { id: "dashboard",  label: "Dashboard",  icon: BarChart3 },
+  { id: "diff",       label: "Изменения",   icon: List },
+  { id: "table",      label: "Таблица",     icon: LayoutList },
+  { id: "dashboard",  label: "Dashboard",   icon: BarChart3 },
   { id: "prosecutor", label: "⚖️ ПРОКУРОР", icon: Scale },
 ];
 
@@ -95,14 +100,13 @@ export default function ComparePage() {
                 ⚠ {criticalHigh} рисков
               </span>
             )}
-            <a
-              href={getReportDownloadUrl(id!)}
+            <Link
+              to={`/report/${id}`}
               className="btn-secondary inline-flex items-center gap-2 text-sm py-1.5"
-              download
             >
               <Download className="w-4 h-4" />
               Отчёт .docx
-            </a>
+            </Link>
           </div>
         )}
       </div>
@@ -193,34 +197,111 @@ export default function ComparePage() {
             </>
           )}
 
+          {/* Вкладка: Таблица */}
+          {activeTab === "table" && comparison.diffResults && (
+            <div className="space-y-5">
+              <RiskTimeline diffResults={comparison.diffResults} />
+              <ChangesTable diffResults={comparison.diffResults} />
+            </div>
+          )}
+
           {/* Вкладка: Dashboard */}
           {activeTab === "dashboard" && (
             <RiskDashboard comparison={comparison} />
           )}
 
           {/* Вкладка: ПРОКУРОР */}
-          {activeTab === "prosecutor" && (
-            <div className="text-center py-12">
-              <p className="text-4xl mb-4">⚖️</p>
-              <p className="text-xl font-bold text-gray-800 mb-2">Модуль ПРОКУРОР</p>
-              <p className="text-gray-500 mb-4">
-                Прогнозирование штрафов, предписаний и судебных рисков.
-              </p>
-              <Link
-                to={`/compare/${id}/prosecutor`}
-                className="btn-primary inline-flex items-center gap-2"
-              >
-                <Scale className="w-4 h-4" />
-                Открыть анализ рисков
-              </Link>
-              {criticalHigh > 0 && (
-                <p className="mt-3 text-sm text-red-600">
-                  ⚠ Обнаружено {criticalHigh} изменений высокого риска
-                </p>
-              )}
-            </div>
+          {activeTab === "prosecutor" && comparison.diffResults && (
+            <ProsecutorPreview
+              comparisonId={id!}
+              diffResults={comparison.diffResults}
+            />
+          )}
+
+          {/* SidePanel — рендерится поверх всего, нужен на всех вкладках */}
+          {comparison.diffResults && (
+            <SidePanel diffResults={comparison.diffResults} />
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ─── ProsecutorPreview ────────────────────────────────────────────────────────
+
+function ProsecutorPreview({
+  comparisonId,
+  diffResults,
+}: {
+  comparisonId: string;
+  diffResults: import("../types").DiffResult[];
+}) {
+  const { data: prosecutorData, isLoading } = useProsecutor(comparisonId, diffResults);
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-8">
+        <div className="w-6 h-6 border-4 border-red-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+        <p className="text-sm text-gray-500">Загружаем прокурорский анализ...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Scale className="w-4 h-4 text-red-600" />
+          <p className="text-sm font-semibold text-gray-800">Прокурорский анализ — предпросмотр</p>
+        </div>
+        <Link
+          to={`/compare/${comparisonId}/prosecutor`}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors"
+        >
+          <Scale className="w-4 h-4" />
+          Полный анализ
+        </Link>
+      </div>
+
+      {prosecutorData && prosecutorData.length > 0 ? (
+        <div className="space-y-3">
+          {prosecutorData.slice(0, 3).map((item) => {
+            const diff = diffResults.find((r) => r.id === item.diffId);
+            return (
+              <div key={item.diffId}>
+                {diff && (
+                  <div className="flex items-center gap-2 mb-1 px-1">
+                    <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono text-gray-600">
+                      п. {diff.sectionPath}
+                    </code>
+                    {diff.riskLevel && <RiskBadge level={diff.riskLevel} size="sm" />}
+                  </div>
+                )}
+                <ProsecutorAlert
+                  comparisonId={comparisonId}
+                  diffId={item.diffId}
+                  analysis={item.prosecutorReport}
+                  compact={true}
+                />
+              </div>
+            );
+          })}
+          {prosecutorData.length > 3 && (
+            <p className="text-sm text-gray-500 text-center">
+              ...и ещё {prosecutorData.length - 3} зон риска.{" "}
+              <Link to={`/compare/${comparisonId}/prosecutor`} className="text-red-600 underline">
+                Открыть полный анализ
+              </Link>
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="card p-8 text-center">
+          <p className="text-3xl mb-2">✅</p>
+          <p className="font-semibold text-gray-700 mb-1">Критических нарушений не обнаружено</p>
+          <p className="text-sm text-gray-500">Изменений с высоким прокурорским риском не найдено.</p>
+        </div>
       )}
     </div>
   );
