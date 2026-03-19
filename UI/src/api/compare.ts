@@ -116,3 +116,64 @@ export async function getComparison(id: string): Promise<Comparison> {
   );
   return mapComparison(response.data);
 }
+
+
+export interface ChainCreateRequest {
+  document_ids: string[];
+}
+
+export interface ChainVersion {
+  versionPair: string;      // "v1 → v2"
+  comparisonId: string;
+  status: string;
+  riskScore: number;
+  changesCount: number;
+  highCritical: number;
+}
+
+export interface ChainResult {
+  id: string;
+  status: string;
+  documentCount: number;
+  versions: ChainVersion[];
+  trend: "INCREASING_RISK" | "DECREASING_RISK" | "STABLE";
+  avgRiskScore: number;
+}
+
+export async function createChainComparison(
+  payload: ChainCreateRequest
+): Promise<{ id: string; comparisonIds: string[]; status: string }> {
+  const response = await apiClient.post<Record<string, unknown>>(
+    "/api/compare/chain",
+    payload
+  );
+  const raw = response.data;
+  return {
+    id:            String(raw.id ?? ""),
+    comparisonIds: Array.isArray(raw.comparison_ids) ? raw.comparison_ids.map(String) : [],
+    status:        String(raw.status ?? "ANALYZING"),
+  };
+}
+
+export async function getChainResult(chainId: string): Promise<ChainResult> {
+  const response = await apiClient.get<Record<string, unknown>>(
+    `/api/compare/chain/${chainId}`
+  );
+  const raw = response.data;
+  const versions = Array.isArray(raw.versions) ? raw.versions : [];
+  return {
+    id:            String(raw.id ?? ""),
+    status:        String(raw.status ?? "ANALYZING"),
+    documentCount: Number(raw.document_count ?? 0),
+    avgRiskScore:  Number(raw.avg_risk_score ?? 0),
+    trend:         (raw.trend ?? "STABLE") as ChainResult["trend"],
+    versions: versions.map((v: Record<string, unknown>) => ({
+      versionPair:  String(v.version_pair ?? ""),
+      comparisonId: String(v.comparison_id ?? ""),
+      status:       String(v.status ?? ""),
+      riskScore:    Number(v.risk_score ?? 0),
+      changesCount: Number(v.changes_count ?? 0),
+      highCritical: Number(v.high_critical ?? 0),
+    })),
+  };
+}
