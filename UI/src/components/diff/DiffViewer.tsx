@@ -1,6 +1,7 @@
 // src/components/diff/DiffViewer.tsx
+// ВАЖНО: SidePanel здесь НЕ рендерится — он рендерится в ComparePage.tsx
+// DiffViewer используется только как "список карточек" внутри DocViewer (сворачиваемый блок)
 import DiffBlock from "./DiffBlock";
-import SidePanel from "./SidePanel";
 import { useUiStore } from "../../store/uiStore";
 import type { DiffResult } from "../../types";
 
@@ -12,10 +13,17 @@ export default function DiffViewer({ diffResults }: DiffViewerProps) {
   const { selectedDiffId, openSidePanel, filters } = useUiStore();
 
   const filtered = diffResults.filter((r) => {
-    if (filters.riskLevels.length > 0 && r.riskLevel && !filters.riskLevels.includes(r.riskLevel)) {
+    if (
+      filters.riskLevels.length > 0 &&
+      r.riskLevel &&
+      !filters.riskLevels.includes(r.riskLevel)
+    ) {
       return false;
     }
-    if (filters.changeTypes.length > 0 && !filters.changeTypes.includes(r.changeType)) {
+    if (
+      filters.changeTypes.length > 0 &&
+      !filters.changeTypes.includes(r.changeType)
+    ) {
       return false;
     }
     if (filters.searchQuery) {
@@ -49,25 +57,23 @@ export default function DiffViewer({ diffResults }: DiffViewerProps) {
   }
 
   return (
-    <>
-      {/* Список изменений */}
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-gray-500">
-          Показано <span className="font-semibold text-gray-800">{filtered.length}</span> из{" "}
-          <span className="font-semibold text-gray-800">{diffResults.length}</span> изменений
-        </p>
-        {filtered.map((result) => (
-          <DiffBlock
-            key={result.id}
-            result={result}
-            isSelected={selectedDiffId === result.id}
-            onClick={() => openSidePanel(result.id)}
-          />
-        ))}
-      </div>
-
-      {/* SidePanel — рендерится поверх всего */}
-      <SidePanel diffResults={filtered} />
-    </>
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-gray-500">
+        Показано{" "}
+        <span className="font-semibold text-gray-800">{filtered.length}</span>{" "}
+        из{" "}
+        <span className="font-semibold text-gray-800">{diffResults.length}</span>{" "}
+        изменений
+      </p>
+      {filtered.map((result) => (
+        <DiffBlock
+          key={result.id}
+          result={result}
+          isSelected={selectedDiffId === result.id}
+          onClick={() => openSidePanel(result.id)}
+        />
+      ))}
+      {/* SidePanel убран отсюда — он рендерится в ComparePage.tsx */}
+    </div>
   );
 }

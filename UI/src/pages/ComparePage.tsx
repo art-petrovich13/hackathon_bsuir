@@ -14,6 +14,9 @@ import ProsecutorAlert from "../components/risk/ProsecutorAlert";
 import RiskBadge from "../components/risk/RiskBadge";
 import type { CompareTab } from "../types";
 import { Clock, Loader2 } from "lucide-react";
+// Добавить после существующих импортов
+import DocViewer from "../components/diff/DocViewer";
+// DiffViewer оставить — он используется внутри DocViewer как сворачиваемый список
 
 const RISK_FILTERS = [
   { level: "CRITICAL" as const, label: "Критических", colorClass: "bg-red-100 text-red-700 border-red-200" },
@@ -198,7 +201,8 @@ export default function ComparePage() {
                 />
               </div>
 
-              <DiffViewer diffResults={comparison.diffResults} />
+              {/* ✅ ИЗМЕНЕНО: DiffViewer → DocViewer */}
+              <DocViewer diffResults={comparison.diffResults} />
             </>
           )}
 
