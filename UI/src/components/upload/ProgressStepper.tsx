@@ -18,24 +18,25 @@ const STEPS: Step[] = [
 
 interface ProgressStepperProps {
   comparisonId: string;
+  currentStatus?: string;   // статус из REST-поллинга (useComparison) — надёжный fallback
   onDone?: () => void;
 }
 
-export default function ProgressStepper({ comparisonId, onDone }: ProgressStepperProps) {
-  const [currentStatus, setCurrentStatus] = useState<string>("PENDING");
+export default function ProgressStepper({ comparisonId, currentStatus: polledStatus, onDone }: ProgressStepperProps) {
+  // Инициализируем из REST-статуса если он уже есть (например ANALYZING)
+  const [currentStatus, setCurrentStatus] = useState<string>(polledStatus ?? "PENDING");
   const [message, setMessage] = useState<string>("Ожидание...");
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     if (!comparisonId) return;
 
-    // Подключиться к WebSocket
     const wsUrl = `ws://localhost:8000/ws/compare/${comparisonId}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      setCurrentStatus("PARSING");
-      setMessage("Подключено. Ожидаем начала обработки...");
+      // НЕ сбрасываем статус — используем polledStatus как начальное значение
+      setMessage("Подключено. Ожидаем обновлений...");
     };
 
     ws.onmessage = (event) => {
@@ -58,7 +59,6 @@ export default function ProgressStepper({ comparisonId, onDone }: ProgressSteppe
     };
 
     ws.onerror = () => {
-      // WebSocket ещё не готов или недоступен — fallback на polling
       setMessage("Обрабатываем...");
     };
 
@@ -70,6 +70,13 @@ export default function ProgressStepper({ comparisonId, onDone }: ProgressSteppe
       ws.close();
     };
   }, [comparisonId, onDone]);
+
+  // Синхронизировать с REST-статусом пока WS не подключён или не даёт обновлений
+  useEffect(() => {
+    if (polledStatus && polledStatus !== "DONE" && polledStatus !== "ERROR") {
+      setCurrentStatus(polledStatus);
+    }
+  }, [polledStatus]);
 
   const getStepIndex = (status: string): number => {
     const map: Record<string, number> = {

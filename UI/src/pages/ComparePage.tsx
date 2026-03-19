@@ -112,9 +112,13 @@ export default function ComparePage() {
       </div>
 
       {/* ProgressStepper пока обрабатывается */}
-      {isProcessing && id && (
+          {isProcessing && id && (
         <div className="mb-6">
-          <ProgressStepper comparisonId={id} onDone={() => {}} />
+          <ProgressStepper
+            comparisonId={id}
+            currentStatus={comparison?.status}
+            onDone={() => {}}
+          />
         </div>
       )}
 
