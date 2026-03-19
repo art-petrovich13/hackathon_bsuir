@@ -13,6 +13,17 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 from app.services.differ import RawChange
 
+from dataclasses import dataclass
+
+@dataclass
+class ComplianceResult:
+    has_contradiction: bool
+    contradiction_level: str   # DIRECT | INDIRECT | NONE
+    violated_norm: str | None
+    contradiction_description: str | None
+    pravo_by_url: str | None
+    fix_suggestion: str | None
+
 
 @dataclass
 class AIAnalysis:
@@ -55,17 +66,31 @@ ANALYSIS_PROMPT = """Проанализируй это изменение в н�
 - SANCTION_CHANGE + HIGH/CRITICAL: изменение ответственности
 - COSMETIC + LOW: исправление опечаток, пунктуации без смысловых изменений"""
 
+COMPLIANCE_PROMPT = """Проверь, не противоречит ли новая редакция нормативным актам Беларуси.
+
+Изменённый пункт ЛНА:
+{text}
+
+Релевантные нормы вышестоящих актов:
+{npa_context}
+
+Верни JSON (только JSON, без markdown):
+{{
+  "has_contradiction": true,
+  "contradiction_level": "DIRECT|INDIRECT|NONE",
+  "violated_norm": "Статья X Закона Y" или null,
+  "contradiction_description": "Описание" или null,
+  "pravo_by_url": "https://pravo.by/document/?guid=..." или null,
+  "fix_suggestion": "Предлагаемая безопасная формулировка" или null
+}}"""
+
 
 class GeminiAnalyzer:
     """AI анализатор через OpenRouter. Имя класса сохранено для совместимости."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=settings.openrouter_api_key,
-            max_retries=0,  # отключаем встроенные ретраи — управляем сами
-        )
         self.model = "arcee-ai/trinity-large-preview:free"
+        self._api_key = settings.openrouter_api_key
 
     async def analyze_batch(self, changes: list[RawChange]) -> list[AIAnalysis]:
         """Строго последовательный анализ — rate limit 16 req/min на бесплатном тарифе."""
@@ -110,19 +135,31 @@ class GeminiAnalyzer:
                         raise
         raise last_error
 
-    async def _call_openrouter(self, prompt: str) -> AIAnalysis:
-        # Gemma не поддерживает role=system — объединяем в одно user-сообщение
-        full_prompt = SYSTEM_PROMPT + "\n\n" + prompt
-        response = await self.client.chat.completions.create(
-            extra_headers={
-                "HTTP-Referer": "https://npa-assistant.local",
-                "X-Title": "NPA Assistant",
-            },
-            model=self.model,
-            messages=[{"role": "user", "content": full_prompt}],
-            temperature=0.1,
-            max_tokens=600,
+    def _make_client(self) -> AsyncOpenAI:
+        """Создать новый клиент. Вызывающий код обязан вызвать await client.close()."""
+        return AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=self._api_key,
+            max_retries=0,
         )
+
+    async def _call_openrouter(self, prompt: str) -> AIAnalysis:
+        full_prompt = SYSTEM_PROMPT + "\n\n" + prompt
+        client = self._make_client()
+        try:
+            response = await client.chat.completions.create(
+                extra_headers={
+                    "HTTP-Referer": "http://localhost:5173",
+                    "X-Title": "NPA Assistant",
+                },
+                model=self.model,
+                messages=[{"role": "user", "content": full_prompt}],
+                temperature=0.1,
+                max_tokens=600,
+            )
+        finally:
+            await client.close()   # явно закрываем ДО того как loop закроется
+
         text = response.choices[0].message.content or ""
         return self._parse_response(text)
 
@@ -179,3 +216,75 @@ class GeminiAnalyzer:
 
     async def create_embedding(self, text: str) -> list[float]:
         return [0.0] * 768
+
+    async def check_compliance(
+        self,
+        text: str,
+        npa_articles: list[dict],
+    ) -> ComplianceResult:
+        """Проверить соответствие текста нормам НПА. Вызывается для MEDIUM/HIGH/CRITICAL."""
+        if not npa_articles or not self._api_key:
+            # Нет данных или нет ключа — возвращаем нейтральный результат
+            # Но pravo_by_url можно взять из первой найденной статьи
+            url = None
+            if npa_articles and npa_articles[0].get("pravo_by_url"):
+                url = npa_articles[0]["pravo_by_url"]
+            return ComplianceResult(
+                has_contradiction=False,
+                contradiction_level="NONE",
+                violated_norm=None,
+                pravo_by_url=url,
+                fix_suggestion=None,
+            )
+
+        # Формируем контекст из найденных статей (берём топ-3)
+        npa_context = "\n\n".join([
+            f"[{a['law_name']}, {a['article_number']}]\n{a['article_text'][:400]}"
+            for a in npa_articles[:3]
+        ])
+
+        prompt = COMPLIANCE_PROMPT.format(
+            text=text[:800],      # обрезаем длинные тексты
+            npa_context=npa_context,
+        )
+        full_prompt = SYSTEM_PROMPT + "\n\n" + prompt
+
+        client = self._make_client()
+        try:
+            response = await client.chat.completions.create(
+                extra_headers={
+                    "HTTP-Referer": "http://localhost:5173",
+                    "X-Title": "NPA Assistant",
+                },
+                model=self.model,
+                messages=[{"role": "user", "content": full_prompt}],
+                temperature=0.1,
+                max_tokens=300,
+            )
+        finally:
+            await client.close()
+
+        raw = response.choices[0].message.content or ""
+        return self._parse_compliance(raw, npa_articles)
+
+    def _parse_compliance(self, text: str, npa_articles: list[dict]) -> ComplianceResult:
+        text = re.sub(r"```json\s*", "", text)
+        text = re.sub(r"```\s*", "", text).strip()
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            data = json.loads(match.group()) if match else {}
+
+        # Если AI не вернул pravo_by_url — берём из первой статьи
+        pravo_url = data.get("pravo_by_url")
+        if not pravo_url and npa_articles:
+            pravo_url = npa_articles[0].get("pravo_by_url")
+
+        return ComplianceResult(
+            has_contradiction=bool(data.get("has_contradiction", False)),
+            contradiction_level=str(data.get("contradiction_level", "NONE")).upper(),
+            violated_norm=data.get("violated_norm"),
+            pravo_by_url=pravo_url,
+            fix_suggestion=data.get("fix_suggestion"),
+        )

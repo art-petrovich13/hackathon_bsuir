@@ -39,6 +39,7 @@ async def _analyze_async(task: Task, comparison_id: str):
     from app.services.parser_types import DocumentStructure, DocumentNode
     from app.services.differ import structural_diff
     from app.services.ai_analyzer import GeminiAnalyzer
+    from app.services.npa_checker import find_relevant_npa_by_text
 
     engine = create_async_engine(settings.database_url, poolclass=NullPool)
     TaskSession = async_sessionmaker(engine, expire_on_commit=False)
@@ -111,21 +112,50 @@ async def _analyze_async(task: Task, comparison_id: str):
         raw_changes = structural_diff(old_structure, new_structure)
         await set_status("ANALYZING", 55, f"Найдено {len(raw_changes)} изменений. Запускаем AI анализ...")
 
-        # ─── ЭТАП 3: AI ANALYZING ─────────────────────────────────────────────
+       # ─── ЭТАП 3: AI ANALYZING + COMPLIANCE ───────────────────────────────
         ai_analyses = []
 
-        # ИСПРАВЛЕНО: проверяем openrouter_api_key вместо gemini_api_key
         if raw_changes and settings.openrouter_api_key:
             try:
                 analyzer = GeminiAnalyzer()
                 ai_analyses = await analyzer.analyze_batch(raw_changes)
-                await set_status("ANALYZING", 80, "AI анализ завершён. Сохраняем результаты...")
+                await set_status("ANALYZING", 70, "AI анализ завершён. Проверяем НПА...")
+
+                # Compliance check для MEDIUM/HIGH/CRITICAL изменений
+                async with TaskSession() as compliance_db:
+                    for i, change in enumerate(raw_changes):
+                        analysis = ai_analyses[i]
+                        if analysis.risk_level not in ("MEDIUM", "HIGH", "CRITICAL"):
+                            continue
+                        try:
+                            text_to_check = change.new_text or change.old_text or ""
+                            relevant_npa = await find_relevant_npa_by_text(
+                                compliance_db, text_to_check, top_k=3
+                            )
+                            compliance = await analyzer.check_compliance(
+                                text=text_to_check,
+                                npa_articles=relevant_npa,
+                            )
+                            # Обогащаем law_reference если AI его не нашёл
+                            if compliance.violated_norm and not analysis.law_reference:
+                                analysis.law_reference = compliance.violated_norm
+                            # Сохраняем pravo_by_url через recommendation (поле уже есть)
+                            # В день 5 добавим отдельное поле pravo_by_url в модель
+                            if compliance.pravo_by_url:
+                                suffix = f"\n\nСсылка на НПА: {compliance.pravo_by_url}"
+                                if analysis.recommendation:
+                                    analysis.recommendation = analysis.recommendation[:400] + suffix
+                                else:
+                                    analysis.recommendation = suffix.strip()
+                        except Exception as e:
+                            print(f"Compliance check failed for {change.section_path}: {e}")
+
+                await set_status("ANALYZING", 85, "Сохраняем результаты...")
             except Exception as e:
-                print(f"AI анализ упал: {e}. Продолжаем без AI.")
+                print(f"AI анализ упал: {e}. Fallback.")
                 analyzer = GeminiAnalyzer()
                 ai_analyses = [analyzer._fallback_analysis(c) for c in raw_changes]
         else:
-            # Без ключа OpenRouter — фолбэк
             if raw_changes:
                 analyzer = GeminiAnalyzer()
                 ai_analyses = [analyzer._fallback_analysis(c) for c in raw_changes]
