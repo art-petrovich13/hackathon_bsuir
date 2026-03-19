@@ -172,7 +172,7 @@ def generate_docx_report(
 
             doc.add_paragraph("")
     
-    # ─── Секция ПРОКУРОР ──────────────────────────────────────────────────────
+     # ─── Секция ПРОКУРОР ──────────────────────────────────────────────────────
     prosecutor_results = [
         r for r in diff_results
         if r.prosecutor_analysis_json and r.risk_level in ("HIGH", "CRITICAL")
@@ -180,8 +180,9 @@ def generate_docx_report(
 
     if prosecutor_results:
         doc.add_page_break()
-        h = doc.add_heading("⚖️ Модуль ПРОКУРОР — Финансовые риски", level=1)
-        h.runs[0].font.color.rgb = RGBColor(0xC0, 0x00, 0x00)
+        heading = doc.add_heading("⚖️ Модуль ПРОКУРОР — Финансовые риски", level=1)
+        for run in heading.runs:
+            run.font.color.rgb = RGBColor(0xC0, 0x00, 0x00)
 
         # Суммарный ущерб
         total_max = sum(
@@ -193,44 +194,42 @@ def generate_docx_report(
         run = p.add_run(f"{total_max:,.0f} BYN (≈ {total_max/3.27:,.0f} USD)")
         run.font.color.rgb = RGBColor(0xC0, 0x00, 0x00)
         run.bold = True
-        run.font.size = Pt(13)
+        run.font.size = Pt(14)
         doc.add_paragraph("")
 
         for result in prosecutor_results:
             pa = result.prosecutor_analysis_json
-            fin = (pa.get("financial_risks") or {})
-            reg = (pa.get("regulatory_risks") or {})
+            if not pa:
+                continue
+            fin = pa.get("financial_risks") or {}
+            reg = pa.get("regulatory_risks") or {}
 
-            doc.add_heading(f"Нарушение в п. {result.section_path}", level=2)
-
-            # Финансовые риски
-            p = doc.add_paragraph()
-            p.add_run("Штраф: ").bold = True
-            p.add_run(
-                f"от {fin.get('fine_min_byn', 0):,.0f} BYN "
-                f"до {fin.get('fine_max_byn', 0):,.0f} BYN"
+            doc.add_heading(
+                f"Нарушение в п. {result.section_path} — риск {pa.get('risk_score', 0):.0f}/100",
+                level=2
             )
 
-            p = doc.add_paragraph()
-            p.add_run("Основание: ").bold = True
-            p.add_run(str(fin.get("fine_basis", "")))
+            # Таблица финансовых рисков
+            t = doc.add_table(rows=2, cols=2)
+            t.style = "Table Grid"
+            t.rows[0].cells[0].text = f"Штраф (мин): {fin.get('fine_min_byn', 0):,.0f} BYN"
+            t.rows[0].cells[1].text = f"Штраф (макс): {fin.get('fine_max_byn', 0):,.0f} BYN"
+            t.rows[1].cells[0].text = f"Основание: {fin.get('fine_basis', '')}"
+            t.rows[1].cells[1].text = f"Регулятор: {reg.get('primary_regulator', '')}"
 
             p = doc.add_paragraph()
-            p.add_run("Регулятор: ").bold = True
-            p.add_run(str(reg.get("primary_regulator", "")))
+            p.add_run(
+                f"Вероятность нарушения: {pa.get('violation_probability', 0)*100:.0f}% | "
+                f"Предписание: {reg.get('prescription_probability', 0)*100:.0f}% | "
+                f"Срочность: {pa.get('urgency', '')}"
+            )
 
-            presc = reg.get("prescription_probability", 0)
-            p = doc.add_paragraph()
-            p.add_run("Вероятность предписания: ").bold = True
-            p.add_run(f"{float(presc)*100:.0f}%")
-
-            # Рекомендуемая формулировка
             fix = pa.get("recommended_fix", "")
             if fix:
                 p = doc.add_paragraph()
                 p.add_run("Рекомендуемая формулировка: ").bold = True
                 run = p.add_run(fix)
-                run.font.color.rgb = RGBColor(0x00, 0x70, 0x00)
+                run.font.color.rgb = RGBColor(0x00, 0x80, 0x00)
 
             doc.add_paragraph("")
 

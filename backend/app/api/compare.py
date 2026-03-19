@@ -15,6 +15,7 @@ from app.models.comparison import Comparison
 from app.schemas import ComparisonCreateSchema, ComparisonResponseSchema
 from app.schemas.diff_result import DiffResultSchema
 from app.tasks.analysis import analyze_comparison
+from app.models.comparison_chain import ComparisonChain
 
 router = APIRouter(prefix="/api", tags=["Compare"])
 
@@ -198,3 +199,119 @@ async def websocket_status_v2(websocket: WebSocket, comparison_id: str):
                 _ws_connections[comparison_id].remove(websocket)
             except ValueError:
                 pass
+
+@router.post("/compare/chain", status_code=202, summary="Сравнить цепочку версий документов")
+async def create_chain_comparison(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Принимает список из 2–5 document_id в хронологическом порядке.
+    Создаёт N-1 попарных сравнений и объединяет их в цепочку.
+    
+    Пример тела: {"document_ids": ["id_v1", "id_v2", "id_v3"]}
+    """
+    doc_ids = payload.get("document_ids", [])
+    if len(doc_ids) < 2:
+        raise HTTPException(status_code=400, detail="Нужно минимум 2 документа")
+    if len(doc_ids) > 5:
+        raise HTTPException(status_code=400, detail="Максимум 5 документов в цепочке")
+
+    # Создать запись цепочки
+    chain = ComparisonChain(
+        document_ids=doc_ids,
+        comparison_ids=[],
+        status="ANALYZING",
+    )
+    db.add(chain)
+    await db.flush()
+    await db.refresh(chain)
+
+    # Создать N-1 попарных сравнений
+    comparison_ids = []
+    for i in range(len(doc_ids) - 1):
+        comp = Comparison(
+            doc_old_id=doc_ids[i],
+            doc_new_id=doc_ids[i + 1],
+            status="PENDING",
+        )
+        saved = await create_comparison(db, comp)
+        task = analyze_comparison.delay(saved.id)
+        saved.task_id = task.id
+        await db.flush()
+        comparison_ids.append(saved.id)
+
+    # Обновить цепочку со списком сравнений
+    chain.comparison_ids = comparison_ids
+    await db.flush()
+    await db.commit()
+
+    return {
+        "id": chain.id,
+        "comparison_ids": comparison_ids,
+        "document_count": len(doc_ids),
+        "status": "ANALYZING",
+    }
+
+
+@router.get("/compare/chain/{chain_id}", summary="Получить результаты цепочки")
+async def get_chain_result(
+    chain_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Возвращает агрегированные результаты по всем сравнениям в цепочке.
+    Включает тренд риска: INCREASING / DECREASING / STABLE.
+    """
+    from sqlalchemy import select as sa_select
+    result = await db.execute(
+        sa_select(ComparisonChain).where(ComparisonChain.id == chain_id)
+    )
+    chain = result.scalar_one_or_none()
+    if not chain:
+        raise HTTPException(status_code=404, detail="Цепочка не найдена")
+
+    comparison_ids = chain.comparison_ids or []
+    versions = []
+    total_scores = []
+
+    for i, comp_id in enumerate(comparison_ids):
+        comp = await get_comparison(db, comp_id)
+        if not comp:
+            continue
+
+        risk_score = comp.total_risk_score or 0
+        total_scores.append(risk_score)
+        summary = comp.summary_json or {}
+
+        versions.append({
+            "version_pair": f"v{i+1} → v{i+2}",
+            "comparison_id": comp_id,
+            "status": comp.status,
+            "risk_score": risk_score,
+            "changes_count": summary.get("total", 0),
+            "high_critical": summary.get("high", 0) + summary.get("critical", 0),
+        })
+
+    # Определить тренд
+    trend = "STABLE"
+    if len(total_scores) >= 2:
+        if total_scores[-1] > total_scores[0] + 10:
+            trend = "INCREASING_RISK"
+        elif total_scores[-1] < total_scores[0] - 10:
+            trend = "DECREASING_RISK"
+
+    # Статус цепочки: DONE если все сравнения DONE
+    all_done = all(v["status"] == "DONE" for v in versions)
+    any_error = any(v["status"] == "ERROR" for v in versions)
+    chain_status = "DONE" if all_done else ("ERROR" if any_error else "ANALYZING")
+
+    return {
+        "id": chain_id,
+        "status": chain_status,
+        "document_count": len(comparison_ids) + 1,
+        "versions": versions,
+        "trend": trend,
+        "avg_risk_score": sum(total_scores) / len(total_scores) if total_scores else 0,
+    }
+

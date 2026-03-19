@@ -10,6 +10,8 @@ from app.models.document import Document
 from app.schemas import DocumentSchema
 from app.services.parser import DocumentParser
 
+
+
 router = APIRouter(prefix="/api", tags=["Upload"])
 
 # Разрешённые расширения
@@ -76,3 +78,4 @@ async def upload_document(
     )
     saved = await create_document(db, doc)
     return DocumentSchema.model_validate(saved)
+
