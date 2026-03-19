@@ -18,11 +18,11 @@ from dataclasses import dataclass
 @dataclass
 class ComplianceResult:
     has_contradiction: bool
-    contradiction_level: str   # DIRECT | INDIRECT | NONE
-    violated_norm: str | None
-    contradiction_description: str | None
-    pravo_by_url: str | None
-    fix_suggestion: str | None
+    contradiction_level: str
+    violated_norm: str | None = None
+    contradiction_description: str | None = None
+    pravo_by_url: str | None = None
+    fix_suggestion: str | None = None
 
 
 @dataclass
@@ -89,7 +89,7 @@ class GeminiAnalyzer:
     """AI анализатор через OpenRouter. Имя класса сохранено для совместимости."""
 
     def __init__(self):
-        self.model = "arcee-ai/trinity-large-preview:free"
+        self.model = settings.openrouter_model
         self._api_key = settings.openrouter_api_key
 
     async def analyze_batch(self, changes: list[RawChange]) -> list[AIAnalysis]:

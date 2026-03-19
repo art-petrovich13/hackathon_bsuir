@@ -210,6 +210,11 @@ async def _analyze_async(task: Task, comparison_id: str):
             )
             await db.commit()
 
+        high_count = risk_counts.get("high", 0) + risk_counts.get("critical", 0)
+        if high_count > 0 and settings.openrouter_api_key:
+            run_prosecutor_analysis.delay(comparison_id)
+            print(f"Запущен ПРОКУРОР для {high_count} HIGH/CRITICAL изменений (comparison: {comparison_id[:8]})")
+            
         # ─── ФИНИШ ────────────────────────────────────────────────────────────
         try:
             from app.api.compare import broadcast_status
@@ -232,6 +237,89 @@ async def _analyze_async(task: Task, comparison_id: str):
         except Exception:
             pass
         raise
+
+    finally:
+        await engine.dispose()
+
+# ─── ТАСК ПРОКУРОРА ───────────────────────────────────────────────────────────
+
+@celery_app.task(
+    bind=True,
+    name="run_prosecutor_analysis",
+    max_retries=1,
+    soft_time_limit=600,
+    time_limit=660,
+)
+def run_prosecutor_analysis(self: Task, comparison_id: str):
+    """Запускает прокурорский анализ для всех HIGH/CRITICAL изменений."""
+    return _run_async(_prosecutor_async(self, comparison_id))
+
+
+async def _prosecutor_async(task: Task, comparison_id: str):
+    from app.core.config import settings
+    from app.models.diff_result import DiffResult
+    from app.services.prosecutor import ProsecutorAnalyzer
+    from dataclasses import asdict
+
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    TaskSession = async_sessionmaker(engine, expire_on_commit=False)
+
+    try:
+        # Загрузить все HIGH/CRITICAL diff_results для этого сравнения
+        async with TaskSession() as db:
+            result = await db.execute(
+                select(DiffResult)
+                .where(DiffResult.comparison_id == comparison_id)
+                .where(DiffResult.risk_level.in_(["HIGH", "CRITICAL"]))
+                .where(DiffResult.prosecutor_analysis_json.is_(None))  # только ещё не обработанные
+            )
+            high_results = list(result.scalars().all())
+
+        if not high_results:
+            print(f"ПРОКУРОР: нет HIGH/CRITICAL изменений для {comparison_id}")
+            return {"status": "DONE", "analyzed": 0}
+
+        print(f"ПРОКУРОР: анализирую {len(high_results)} изменений для {comparison_id}")
+        analyzer = ProsecutorAnalyzer()
+        updates = []
+
+        for diff in high_results:
+            try:
+                report = await analyzer.analyze(
+                    section_path=diff.section_path,
+                    semantic_type=diff.semantic_type,
+                    old_text=diff.old_text,
+                    new_text=diff.new_text,
+                    law_reference=diff.law_reference,
+                    risk_level=diff.risk_level or "HIGH",
+                )
+                updates.append((diff.id, asdict(report)))
+            except Exception as e:
+                print(f"ПРОКУРОР: ошибка для {diff.section_path}: {e}")
+
+        # Сохранить результаты
+        async with TaskSession() as db:
+            for diff_id, report_dict in updates:
+                await db.execute(
+                    update(DiffResult)
+                    .where(DiffResult.id == diff_id)
+                    .values(prosecutor_analysis_json=report_dict)
+                )
+            await db.commit()
+
+        # Уведомить через WebSocket
+        try:
+            from app.api.compare import broadcast_status
+            await broadcast_status(comparison_id, {
+                "status": "DONE",
+                "progress": 100,
+                "message": f"Прокурорский анализ завершён: {len(updates)} нарушений",
+            })
+        except Exception:
+            pass
+
+        print(f"ПРОКУРОР: сохранено {len(updates)} результатов")
+        return {"status": "DONE", "analyzed": len(updates)}
 
     finally:
         await engine.dispose()

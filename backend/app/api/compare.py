@@ -106,8 +106,53 @@ async def get_prosecutor_data(
     comparison_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """TODO День 5."""
-    raise HTTPException(status_code=501, detail="Будет реализовано в День 5")
+    """
+    Возвращает прокурорский анализ для всех HIGH/CRITICAL изменений.
+    Если анализ ещё выполняется — возвращает результаты которые уже есть.
+    """
+    comparison = await get_comparison(db, comparison_id)
+    if not comparison:
+        raise HTTPException(status_code=404, detail="Сравнение не найдено")
+
+    # Получить все diff_results
+    all_results = await get_diff_results(db, comparison_id)
+
+    prosecutor_results = []
+    total_fine_max = 0.0
+
+    for dr in all_results:
+        if dr.risk_level not in ("HIGH", "CRITICAL"):
+            continue
+
+        if dr.prosecutor_analysis_json:
+            fin = dr.prosecutor_analysis_json.get("financial_risks") or {}
+            total_fine_max += float(fin.get("fine_max_byn", 0))
+
+        prosecutor_results.append({
+            "diff_id":          dr.id,
+            "section_path":     dr.section_path,
+            "risk_level":       dr.risk_level,
+            "change_type":      dr.change_type,
+            "semantic_type":    dr.semantic_type,
+            "old_text":         dr.old_text,
+            "new_text":         dr.new_text,
+            "law_reference":    dr.law_reference,
+            "prosecutor_report": dr.prosecutor_analysis_json,
+        })
+
+    # Сортировать по risk_score (если есть), самые опасные сверху
+    prosecutor_results.sort(
+        key=lambda x: (x["prosecutor_report"] or {}).get("risk_score", 0),
+        reverse=True,
+    )
+
+    return {
+        "comparison_id":               comparison_id,
+        "total_financial_exposure_byn": round(total_fine_max, 2),
+        "total_financial_exposure_usd": round(total_fine_max / 3.27, 2),
+        "has_prosecutor_data":          any(r["prosecutor_report"] for r in prosecutor_results),
+        "results":                      prosecutor_results,
+    }
 
 
 @router.websocket("/ws/compare/{comparison_id}")
