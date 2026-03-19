@@ -6,7 +6,10 @@ celery_app = Celery(
     "npa_assistant",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.tasks.analysis"],  # ← это главное, без этого таски не видны
+    include=[
+        "app.tasks.analysis",   # analyze_comparison, run_prosecutor_analysis,
+                                # analyze_compliance, analyze_audit — все в одном файле
+    ],  # ← это главное, без этого таски не видны
 )
 
 celery_app.conf.update(

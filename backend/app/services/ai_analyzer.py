@@ -84,6 +84,89 @@ COMPLIANCE_PROMPT = """Проверь, не противоречит ли нов
   "fix_suggestion": "Предлагаемая безопасная формулировка" или null
 }}"""
 
+# Промпт для Режима 3: проверка дочернего ЛНА на соответствие родительскому НПА
+PARENT_CHILD_COMPLIANCE_PROMPT = """Ты — эксперт по законодательству Республики Беларусь.
+
+РОДИТЕЛЬСКИЙ НПА (вышестоящий документ организации):
+{parent_context}
+
+ГОСУДАРСТВЕННЫЕ НОРМЫ РБ по данной теме:
+{npa_context}
+
+ПРОВЕРЯЕМЫЙ РАЗДЕЛ ДОЧЕРНЕГО ЛНА:
+Путь: {section_path}
+Текст: {child_text}
+
+Проверь:
+1. Не противоречит ли данный пункт родительскому НПА
+2. Не противоречит ли данный пункт государственному законодательству РБ
+3. Если противоречит — что именно нарушено и как исправить
+
+Верни ТОЛЬКО JSON (без markdown):
+{{
+  "status": "COMPLIANT|VIOLATION|WARNING",
+  "risk_level": "LOW|MEDIUM|HIGH|CRITICAL",
+  "risk_score": <число 0-100>,
+  "violation_source": "PARENT|STATE_LAW|BOTH|NONE",
+  "violated_norm": "Статья X Закона Y или Пункт Z родительского НПА или null",
+  "violation_description": "Описание нарушения или null",
+  "recommendation": "Как исправить формулировку",
+  "confidence": <число 0.0-1.0>
+}}
+
+Правила классификации:
+- COMPLIANT + LOW: соответствует и родительскому, и государственному законодательству
+- WARNING + MEDIUM: незначительное отклонение, требует уточнения
+- VIOLATION + HIGH: явное противоречие родительскому НПА или закону
+- VIOLATION + CRITICAL: грубое нарушение с высоким риском санкций"""
+
+
+# Промпт для Режима 4: аудит одного документа по госзаконодательству РБ
+AUDIT_PROMPT = """Ты — эксперт по законодательству Республики Беларусь.
+Твоя задача — найти нарушения в тексте НПА/ЛНА организации.
+
+ИЕРАРХИЯ НПА БЕЛАРУСИ (от высшего к низшему):
+1. Конституция Республики Беларусь
+2. Законы РБ (Трудовой кодекс, КоАП, ГК, Кодекс об образовании...)
+3. Декреты и Указы Президента
+4. Постановления Совета Министров
+5. Акты министерств и ведомств
+6. ЛНА организаций
+
+КАТЕГОРИИ ДОКУМЕНТОВ И ПРИМЕНИМОЕ ЗАКОНОДАТЕЛЬСТВО:
+- Трудовые отношения, ПВТР, должностные инструкции → Трудовой кодекс РБ
+- Образование → Кодекс об образовании РБ
+- Здравоохранение, медицина → Закон о здравоохранении РБ
+- Персональные данные → Закон о персональных данных и их защите
+- Хозяйственная деятельность → ГК РБ, Закон о хозяйственных обществах
+- Антикоррупционные нормы → Закон о противодействии коррупции РБ
+
+ПРОВЕРЯЕМЫЙ РАЗДЕЛ ДОКУМЕНТА:
+Путь в документе: {section_path}
+Текст: {section_text}
+
+ГОСУДАРСТВЕННЫЕ НОРМЫ ПО ДАННОЙ ТЕМЕ:
+{npa_context}
+
+Определи категорию и найди нарушения. Верни ТОЛЬКО JSON (без markdown):
+{{
+  "has_violation": true/false,
+  "category": "LABOR|EDUCATION|HEALTH|PERSONAL_DATA|COMMERCIAL|ANTICORRUPTION|OTHER",
+  "risk_level": "LOW|MEDIUM|HIGH|CRITICAL",
+  "risk_score": <число 0-100>,
+  "violation_description": "Описание нарушения или null",
+  "violated_norm": "Статья X Закона Y или null",
+  "recommendation": "Конкретная рекомендация по исправлению",
+  "confidence": <число 0.0-1.0>
+}}
+
+Правила:
+- Если нарушений нет — has_violation: false, risk_level: LOW, risk_score < 20
+- CRITICAL: прямое нарушение Конституции или основных законов
+- HIGH: нарушение обязательных норм (Трудовой кодекс, КоАП и т.д.)
+- MEDIUM: нарушение рекомендательных норм или неточности
+- LOW: соответствует законодательству"""
+
 
 class GeminiAnalyzer:
     """AI анализатор через OpenRouter. Имя класса сохранено для совместимости."""
@@ -266,6 +349,118 @@ class GeminiAnalyzer:
 
         raw = response.choices[0].message.content or ""
         return self._parse_compliance(raw, npa_articles)
+
+    async def check_parent_child_compliance(
+        self,
+        section_path: str,
+        child_text: str,
+        parent_context: str,
+        npa_articles: list[dict],
+    ) -> dict:
+        """
+        Режим 3: Проверить раздел дочернего ЛНА на соответствие
+        родительскому НПА и государственному законодательству.
+        """
+        npa_context = "\n\n".join([
+            f"[{a['law_name']}, {a['article_number']}]\n{a['article_text'][:400]}"
+            for a in npa_articles[:3]
+        ]) if npa_articles else "Релевантных норм в базе не найдено."
+
+        prompt = PARENT_CHILD_COMPLIANCE_PROMPT.format(
+            parent_context=parent_context[:1000],
+            npa_context=npa_context,
+            section_path=section_path,
+            child_text=child_text[:600],
+        )
+        full_prompt = SYSTEM_PROMPT + "\n\n" + prompt
+
+        client = self._make_client()
+        try:
+            response = await client.chat.completions.create(
+                extra_headers={"HTTP-Referer": "http://localhost:5173", "X-Title": "NPA Assistant"},
+                model=self.model,
+                messages=[{"role": "user", "content": full_prompt}],
+                temperature=0.1,
+                max_tokens=400,
+            )
+        finally:
+            await client.close()
+
+        raw = response.choices[0].message.content or ""
+        raw = re.sub(r"```json\s*", "", raw)
+        raw = re.sub(r"```\s*", "", raw).strip()
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            data = json.loads(match.group()) if match else {}
+
+        return {
+            "status":                str(data.get("status", "WARNING")),
+            "risk_level":            str(data.get("risk_level", "MEDIUM")).upper(),
+            "risk_score":            max(0.0, min(100.0, float(data.get("risk_score", 40)))),
+            "violation_source":      str(data.get("violation_source", "NONE")),
+            "violated_norm":         data.get("violated_norm"),
+            "violation_description": data.get("violation_description"),
+            "recommendation":        str(data.get("recommendation", ""))[:500],
+            "confidence":            max(0.0, min(1.0, float(data.get("confidence", 0.5)))),
+        }
+
+    async def audit_section(
+        self,
+        section_path: str,
+        section_text: str,
+        npa_articles: list[dict],
+    ) -> dict:
+        """
+        Режим 4: Проверить один раздел документа на соответствие
+        государственному законодательству РБ.
+        """
+        npa_context = "\n\n".join([
+            f"[{a['law_name']}, {a['article_number']}]\n{a['article_text'][:400]}"
+            for a in npa_articles[:4]
+        ]) if npa_articles else "Релевантных норм в базе не найдено."
+
+        prompt = AUDIT_PROMPT.format(
+            section_path=section_path,
+            section_text=section_text[:800],
+            npa_context=npa_context,
+        )
+        full_prompt = SYSTEM_PROMPT + "\n\n" + prompt
+
+        client = self._make_client()
+        try:
+            response = await client.chat.completions.create(
+                extra_headers={"HTTP-Referer": "http://localhost:5173", "X-Title": "NPA Assistant"},
+                model=self.model,
+                messages=[{"role": "user", "content": full_prompt}],
+                temperature=0.1,
+                max_tokens=400,
+            )
+        finally:
+            await client.close()
+
+        raw = response.choices[0].message.content or ""
+        raw = re.sub(r"```json\s*", "", raw)
+        raw = re.sub(r"```\s*", "", raw).strip()
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            data = json.loads(match.group()) if match else {}
+
+        return {
+            "has_violation":       bool(data.get("has_violation", False)),
+            "category":            str(data.get("category", "OTHER")),
+            "risk_level":          str(data.get("risk_level", "LOW")).upper(),
+            "risk_score":          max(0.0, min(100.0, float(data.get("risk_score", 10)))),
+            "violation_description": data.get("violation_description"),
+            "violated_norm":       data.get("violated_norm"),
+            "recommendation":      str(data.get("recommendation", ""))[:500],
+            "confidence":          max(0.0, min(1.0, float(data.get("confidence", 0.5)))),
+        }
 
     def _parse_compliance(self, text: str, npa_articles: list[dict]) -> ComplianceResult:
         text = re.sub(r"```json\s*", "", text)

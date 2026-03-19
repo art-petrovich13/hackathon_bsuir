@@ -19,24 +19,28 @@ class Comparison(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    # Ссылки на оба документа
     doc_old_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("documents.id", ondelete="CASCADE"),
-        nullable=False, index=True, comment="ID старой редакции"
+        nullable=False, index=True, comment="ID старой редакции / родительского НПА / единственного документа"
     )
     doc_new_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("documents.id", ondelete="CASCADE"),
-        nullable=False, index=True, comment="ID новой редакции"
+        nullable=False, index=True, comment="ID новой редакции / дочернего ЛНА"
     )
     # PENDING | PARSING | ANALYZING | DONE | ERROR
     status: Mapped[str] = mapped_column(
         String(20), default="PENDING", nullable=False
     )
-    # ID Celery задачи для трекинга прогресса
+    # pair | chain | compliance | audit
+    # pair     = стандартное сравнение двух редакций (Режим 1)
+    # chain    = цепочка версий (Режим 2)
+    # compliance = проверка дочернего vs родительского (Режим 3)
+    # audit    = аудит одного документа по госзаконодательству (Режим 4)
+    mode: Mapped[str] = mapped_column(
+        String(20), default="pair", nullable=False
+    )
     task_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    # Итоговый балл риска (0-100), вычисляется как среднее по всем DiffResult
     total_risk_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Краткая статистика: { "total": 15, "critical": 2, "high": 3, "medium": 5, "low": 5 }
     summary_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

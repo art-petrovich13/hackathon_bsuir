@@ -1,26 +1,25 @@
 # backend/app/api/compare.py
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select as sa_select
 
 from app.core.database import get_db
-from app.core.crud import (
-    create_comparison,
-    get_comparison,
-    get_diff_results,
-)
+from app.core.crud import create_comparison, get_comparison, get_diff_results
 from app.models.comparison import Comparison
-from app.schemas import ComparisonCreateSchema, ComparisonResponseSchema
+from app.models.comparison_chain import ComparisonChain
+from app.schemas import (
+    ComparisonCreateSchema,
+    ComparisonResponseSchema,
+    ComplianceCheckSchema,
+    AuditSchema,
+)
 from app.schemas.diff_result import DiffResultSchema
 from app.tasks.analysis import analyze_comparison
-from app.models.comparison_chain import ComparisonChain
 
 router = APIRouter(prefix="/api", tags=["Compare"])
 
-# Простой in-memory менеджер WebSocket соединений
-# Ключ: comparison_id, значение: список активных соединений
 _ws_connections: dict[str, list[WebSocket]] = {}
 
 
@@ -37,27 +36,64 @@ async def broadcast_status(comparison_id: str, data: dict):
         connections.remove(ws)
 
 
-@router.post("/compare", status_code=202, summary="Создать задачу сравнения")
+# ─── РЕЖИМ 1: стандартное попарное сравнение ────────────────────────────────
+
+@router.post("/compare", status_code=202, summary="Режим 1: Сравнить две версии документа")
 async def create_comparison_endpoint(
     payload: ComparisonCreateSchema,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Принимает два doc_id, создаёт Comparison в БД и запускает Celery таск.
-    Возвращает { id, task_id, status: "PENDING" }.
+    Режим 1 (pair): сравнивает старую и новую редакцию документа.
+    Принимает два doc_id, создаёт Comparison и запускает Celery таск.
     """
-    # Создать запись сравнения в БД
     comparison = Comparison(
         doc_old_id=payload.doc_old_id,
         doc_new_id=payload.doc_new_id,
         status="PENDING",
+        mode="pair",
+    )
+    saved = await create_comparison(db, comparison)
+    task = analyze_comparison.delay(saved.id)
+    saved.task_id = task.id
+    await db.flush()
+
+    return {"id": saved.id, "task_id": task.id, "status": "PENDING", "mode": "pair"}
+
+
+# ─── РЕЖИМ 3: compliance — дочерний vs родительский НПА ─────────────────────
+
+@router.post("/compare/compliance", status_code=202, summary="Режим 3: Проверить дочерний НПА на соответствие родительскому")
+async def create_compliance_check(
+    payload: ComplianceCheckSchema,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Режим 3 (compliance): загружается родительский НПА (parent_doc_id)
+    и дочерний ЛНА (child_doc_id). AI проверяет каждый раздел дочернего
+    на соответствие родительскому и государственному законодательству РБ.
+    Возвращает список нарушений с рекомендациями.
+    """
+    # Проверить что оба документа существуют
+    from app.models.document import Document
+    from sqlalchemy import select
+
+    for doc_id, name in [(payload.parent_doc_id, "parent_doc_id"), (payload.child_doc_id, "child_doc_id")]:
+        res = await db.execute(select(Document).where(Document.id == doc_id))
+        if not res.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail=f"Документ не найден: {name}={doc_id}")
+
+    comparison = Comparison(
+        doc_old_id=payload.parent_doc_id,   # old = родительский НПА
+        doc_new_id=payload.child_doc_id,    # new = дочерний ЛНА
+        status="PENDING",
+        mode="compliance",
     )
     saved = await create_comparison(db, comparison)
 
-    # Запустить Celery таск асинхронно
-    task = analyze_comparison.delay(saved.id)
-
-    # Сохранить task_id в БД
+    # Запустить специальный Celery таск для compliance
+    from app.tasks.analysis import analyze_compliance
+    task = analyze_compliance.delay(saved.id)
     saved.task_id = task.id
     await db.flush()
 
@@ -65,151 +101,60 @@ async def create_comparison_endpoint(
         "id": saved.id,
         "task_id": task.id,
         "status": "PENDING",
+        "mode": "compliance",
     }
 
 
-@router.get(
-    "/compare/{comparison_id}",
-    response_model=ComparisonResponseSchema,
-    summary="Получить результат сравнения",
-)
-async def get_comparison_result(
-    comparison_id: str,
+# ─── РЕЖИМ 4: audit — аудит одного документа ────────────────────────────────
+
+@router.post("/compare/audit", status_code=202, summary="Режим 4: Аудит одного документа по законодательству РБ")
+async def create_audit(
+    payload: AuditSchema,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Возвращает Comparison с полным списком diff_results.
-    Если status != DONE — возвращает текущий статус без результатов.
+    Режим 4 (audit): один документ проверяется на соответствие
+    государственному законодательству Республики Беларусь.
+    AI определяет категорию документа и находит нарушения в каждом разделе.
     """
-    comparison = await get_comparison(db, comparison_id)
-    if not comparison:
-        raise HTTPException(status_code=404, detail="Сравнение не найдено")
+    from app.models.document import Document
+    from sqlalchemy import select
 
-    diff_results = []
-    if comparison.status == "DONE":
-        diff_results = await get_diff_results(db, comparison_id)
+    res = await db.execute(select(Document).where(Document.id == payload.doc_id))
+    if not res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail=f"Документ не найден: {payload.doc_id}")
 
-    return ComparisonResponseSchema(
-        id=comparison.id,
-        doc_old_id=comparison.doc_old_id,
-        doc_new_id=comparison.doc_new_id,
-        status=comparison.status,
-        task_id=comparison.task_id,
-        total_risk_score=comparison.total_risk_score,
-        summary_json=comparison.summary_json,
-        diff_results=[DiffResultSchema.model_validate(r) for r in diff_results],
-        created_at=comparison.created_at,
+    # Для audit doc_old_id и doc_new_id — один и тот же документ
+    comparison = Comparison(
+        doc_old_id=payload.doc_id,
+        doc_new_id=payload.doc_id,
+        status="PENDING",
+        mode="audit",
     )
+    saved = await create_comparison(db, comparison)
 
-
-@router.get("/compare/{comparison_id}/prosecutor", summary="Данные модуля ПРОКУРОР")
-async def get_prosecutor_data(
-    comparison_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Возвращает прокурорский анализ для всех HIGH/CRITICAL изменений.
-    Если анализ ещё выполняется — возвращает результаты которые уже есть.
-    """
-    comparison = await get_comparison(db, comparison_id)
-    if not comparison:
-        raise HTTPException(status_code=404, detail="Сравнение не найдено")
-
-    # Получить все diff_results
-    all_results = await get_diff_results(db, comparison_id)
-
-    prosecutor_results = []
-    total_fine_max = 0.0
-
-    for dr in all_results:
-        if dr.risk_level not in ("HIGH", "CRITICAL"):
-            continue
-
-        if dr.prosecutor_analysis_json:
-            fin = dr.prosecutor_analysis_json.get("financial_risks") or {}
-            total_fine_max += float(fin.get("fine_max_byn", 0))
-
-        prosecutor_results.append({
-            "diff_id":          dr.id,
-            "section_path":     dr.section_path,
-            "risk_level":       dr.risk_level,
-            "change_type":      dr.change_type,
-            "semantic_type":    dr.semantic_type,
-            "old_text":         dr.old_text,
-            "new_text":         dr.new_text,
-            "law_reference":    dr.law_reference,
-            "prosecutor_report": dr.prosecutor_analysis_json,
-        })
-
-    # Сортировать по risk_score (если есть), самые опасные сверху
-    prosecutor_results.sort(
-        key=lambda x: (x["prosecutor_report"] or {}).get("risk_score", 0),
-        reverse=True,
-    )
+    from app.tasks.analysis import analyze_audit
+    task = analyze_audit.delay(saved.id)
+    saved.task_id = task.id
+    await db.flush()
 
     return {
-        "comparison_id":               comparison_id,
-        "total_financial_exposure_byn": round(total_fine_max, 2),
-        "total_financial_exposure_usd": round(total_fine_max / 3.27, 2),
-        "has_prosecutor_data":          any(r["prosecutor_report"] for r in prosecutor_results),
-        "results":                      prosecutor_results,
+        "id": saved.id,
+        "task_id": task.id,
+        "status": "PENDING",
+        "mode": "audit",
     }
 
 
-@router.websocket("/ws/compare/{comparison_id}")
-async def websocket_status(websocket: WebSocket, comparison_id: str):
-    """
-    WebSocket эндпоинт — клиент подключается и получает обновления статуса.
-    Формат сообщений: { status, progress, message }
-    """
-    await websocket.accept()
+# ─── РЕЖИМ 2: chain — цепочка версий ────────────────────────────────────────
 
-    # Зарегистрировать соединение
-    if comparison_id not in _ws_connections:
-        _ws_connections[comparison_id] = []
-    _ws_connections[comparison_id].append(websocket)
-
-    try:
-        # Держать соединение открытым
-        while True:
-            # Ждём любое сообщение от клиента (ping/pong или закрытие)
-            data = await websocket.receive_text()
-            # Можно добавить обработку команд от клиента
-    except WebSocketDisconnect:
-        if comparison_id in _ws_connections:
-            _ws_connections[comparison_id].remove(websocket)
-
-# В конец backend/app/api/compare.py добавь:
-
-# Отдельный роутер для WebSocket (без prefix /api)
-ws_router = APIRouter(tags=["Compare"])
-
-@ws_router.websocket("/ws/compare/{comparison_id}")
-async def websocket_status_v2(websocket: WebSocket, comparison_id: str):
-    await websocket.accept()
-    if comparison_id not in _ws_connections:
-        _ws_connections[comparison_id] = []
-    _ws_connections[comparison_id].append(websocket)
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        if comparison_id in _ws_connections:
-            try:
-                _ws_connections[comparison_id].remove(websocket)
-            except ValueError:
-                pass
-
-@router.post("/compare/chain", status_code=202, summary="Сравнить цепочку версий документов")
+@router.post("/compare/chain", status_code=202, summary="Режим 2: Сравнить цепочку версий")
 async def create_chain_comparison(
     payload: dict,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Принимает список из 2–5 document_id в хронологическом порядке.
-    Создаёт N-1 попарных сравнений и объединяет их в цепочку.
-    
-    Пример тела: {"document_ids": ["id_v1", "id_v2", "id_v3"]}
+    Режим 2 (chain): принимает 2–5 document_id, создаёт N-1 попарных сравнений.
     """
     doc_ids = payload.get("document_ids", [])
     if len(doc_ids) < 2:
@@ -217,7 +162,6 @@ async def create_chain_comparison(
     if len(doc_ids) > 5:
         raise HTTPException(status_code=400, detail="Максимум 5 документов в цепочке")
 
-    # Создать запись цепочки
     chain = ComparisonChain(
         document_ids=doc_ids,
         comparison_ids=[],
@@ -227,13 +171,13 @@ async def create_chain_comparison(
     await db.flush()
     await db.refresh(chain)
 
-    # Создать N-1 попарных сравнений
     comparison_ids = []
     for i in range(len(doc_ids) - 1):
         comp = Comparison(
             doc_old_id=doc_ids[i],
             doc_new_id=doc_ids[i + 1],
             status="PENDING",
+            mode="pair",
         )
         saved = await create_comparison(db, comp)
         task = analyze_comparison.delay(saved.id)
@@ -241,7 +185,6 @@ async def create_chain_comparison(
         await db.flush()
         comparison_ids.append(saved.id)
 
-    # Обновить цепочку со списком сравнений
     chain.comparison_ids = comparison_ids
     await db.flush()
     await db.commit()
@@ -259,11 +202,6 @@ async def get_chain_result(
     chain_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Возвращает агрегированные результаты по всем сравнениям в цепочке.
-    Включает тренд риска: INCREASING / DECREASING / STABLE.
-    """
-    from sqlalchemy import select as sa_select
     result = await db.execute(
         sa_select(ComparisonChain).where(ComparisonChain.id == chain_id)
     )
@@ -279,11 +217,9 @@ async def get_chain_result(
         comp = await get_comparison(db, comp_id)
         if not comp:
             continue
-
         risk_score = comp.total_risk_score or 0
         total_scores.append(risk_score)
         summary = comp.summary_json or {}
-
         versions.append({
             "version_pair": f"v{i+1} → v{i+2}",
             "comparison_id": comp_id,
@@ -293,7 +229,6 @@ async def get_chain_result(
             "high_critical": summary.get("high", 0) + summary.get("critical", 0),
         })
 
-    # Определить тренд
     trend = "STABLE"
     if len(total_scores) >= 2:
         if total_scores[-1] > total_scores[0] + 10:
@@ -301,7 +236,6 @@ async def get_chain_result(
         elif total_scores[-1] < total_scores[0] - 10:
             trend = "DECREASING_RISK"
 
-    # Статус цепочки: DONE если все сравнения DONE
     all_done = all(v["status"] == "DONE" for v in versions)
     any_error = any(v["status"] == "ERROR" for v in versions)
     chain_status = "DONE" if all_done else ("ERROR" if any_error else "ANALYZING")
@@ -315,3 +249,137 @@ async def get_chain_result(
         "avg_risk_score": sum(total_scores) / len(total_scores) if total_scores else 0,
     }
 
+
+# ─── GET результата (все режимы) ─────────────────────────────────────────────
+
+@router.get(
+    "/compare/{comparison_id}",
+    response_model=ComparisonResponseSchema,
+    summary="Получить результат сравнения (все режимы)",
+)
+async def get_comparison_result(
+    comparison_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Возвращает Comparison с полным списком diff_results.
+    Поле mode указывает режим: pair|compliance|audit.
+    Если status != DONE — возвращает текущий статус без результатов.
+    """
+    comparison = await get_comparison(db, comparison_id)
+    if not comparison:
+        raise HTTPException(status_code=404, detail="Сравнение не найдено")
+
+    diff_results = []
+    if comparison.status == "DONE":
+        diff_results = await get_diff_results(db, comparison_id)
+
+    return ComparisonResponseSchema(
+        id=comparison.id,
+        doc_old_id=comparison.doc_old_id,
+        doc_new_id=comparison.doc_new_id,
+        status=comparison.status,
+        mode=getattr(comparison, "mode", "pair"),
+        task_id=comparison.task_id,
+        total_risk_score=comparison.total_risk_score,
+        summary_json=comparison.summary_json,
+        diff_results=[DiffResultSchema.model_validate(r) for r in diff_results],
+        created_at=comparison.created_at,
+    )
+
+
+# ─── ПРОКУРОР ────────────────────────────────────────────────────────────────
+
+@router.get("/compare/{comparison_id}/prosecutor", summary="Данные модуля ПРОКУРОР")
+async def get_prosecutor_data(
+    comparison_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    comparison = await get_comparison(db, comparison_id)
+    if not comparison:
+        raise HTTPException(status_code=404, detail="Сравнение не найдено")
+
+    all_results = await get_diff_results(db, comparison_id)
+    prosecutor_results = []
+    total_fine_max = 0.0
+
+    # Для режимов compliance и audit — возвращаем все нарушения (не только HIGH/CRITICAL)
+    mode = getattr(comparison, "mode", "pair")
+    if mode in ("compliance", "audit"):
+        # Для этих режимов показываем все результаты с нарушениями
+        relevant_results = [
+            r for r in all_results
+            if r.risk_level in ("HIGH", "CRITICAL", "MEDIUM") or r.prosecutor_analysis_json
+        ]
+    else:
+        relevant_results = [r for r in all_results if r.risk_level in ("HIGH", "CRITICAL")]
+
+    for dr in relevant_results:
+        if dr.prosecutor_analysis_json:
+            fin = dr.prosecutor_analysis_json.get("financial_risks") or {}
+            total_fine_max += float(fin.get("fine_max_byn", 0))
+
+        prosecutor_results.append({
+            "diff_id":           dr.id,
+            "section_path":      dr.section_path,
+            "risk_level":        dr.risk_level,
+            "change_type":       dr.change_type,
+            "semantic_type":     dr.semantic_type,
+            "old_text":          dr.old_text,
+            "new_text":          dr.new_text,
+            "law_reference":     dr.law_reference,
+            "recommendation":    dr.recommendation,
+            "prosecutor_report": dr.prosecutor_analysis_json,
+        })
+
+    prosecutor_results.sort(
+        key=lambda x: (x["prosecutor_report"] or {}).get("risk_score", 0),
+        reverse=True,
+    )
+
+    return {
+        "comparison_id":                comparison_id,
+        "mode":                         mode,
+        "total_financial_exposure_byn": round(total_fine_max, 2),
+        "total_financial_exposure_usd": round(total_fine_max / 3.27, 2),
+        "has_prosecutor_data":          any(r["prosecutor_report"] for r in prosecutor_results),
+        "results":                      prosecutor_results,
+    }
+
+
+# ─── WebSocket ────────────────────────────────────────────────────────────────
+
+@router.websocket("/ws/compare/{comparison_id}")
+async def websocket_status(websocket: WebSocket, comparison_id: str):
+    await websocket.accept()
+    if comparison_id not in _ws_connections:
+        _ws_connections[comparison_id] = []
+    _ws_connections[comparison_id].append(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        if comparison_id in _ws_connections:
+            try:
+                _ws_connections[comparison_id].remove(websocket)
+            except ValueError:
+                pass
+
+
+ws_router = APIRouter(tags=["Compare"])
+
+@ws_router.websocket("/ws/compare/{comparison_id}")
+async def websocket_status_v2(websocket: WebSocket, comparison_id: str):
+    await websocket.accept()
+    if comparison_id not in _ws_connections:
+        _ws_connections[comparison_id] = []
+    _ws_connections[comparison_id].append(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        if comparison_id in _ws_connections:
+            try:
+                _ws_connections[comparison_id].remove(websocket)
+            except ValueError:
+                pass
