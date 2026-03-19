@@ -48,7 +48,7 @@ export default function AppRoutes() {
 
           <Route path="chain/:chainId" element={<ChainComparePage />} />
           <Route path="compliance/:id" element={<CompliancePage />} />
-<Route path="audit/:id"      element={<AuditPage />} />
+          <Route path="audit/:id"      element={<AuditPage />} />
 
           {/* 404 */}
           <Route path="*" element={<NotFoundPage />} />

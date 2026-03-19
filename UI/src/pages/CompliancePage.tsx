@@ -11,7 +11,6 @@ import type { DiffResult } from "../types";
 export default function CompliancePage() {
   const { id } = useParams<{ id: string }>();
   const { data: comparison, isLoading, isError } = useComparison(id);
-  const { activeTab, setActiveTab } = useUiStore();
 
   const isDone = comparison?.status === "DONE";
   const isProcessing = comparison && !isDone && comparison.status !== "ERROR";

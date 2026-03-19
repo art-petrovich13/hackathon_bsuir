@@ -8,6 +8,7 @@ import type { DiffResult } from "../../types";
 
 interface DocViewerProps {
   diffResults: DiffResult[];
+  mode?: "compare" | "compliance" | "audit";
 }
 
 // ─── Конфиг подсветки по типу изменения ──────────────────────────────────────
@@ -200,7 +201,7 @@ function DocParagraph({
 
 // ─── DocViewer: главный компонент ────────────────────────────────────────────
 
-export default function DocViewer({ diffResults }: DocViewerProps) {
+export default function DocViewer({ diffResults, mode = "compare" }: DocViewerProps) {
   const { selectedDiffId, openSidePanel, filters } = useUiStore();
   const [listExpanded, setListExpanded] = useState(false);
 

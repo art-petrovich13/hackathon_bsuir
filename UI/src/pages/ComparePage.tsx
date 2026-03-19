@@ -229,7 +229,7 @@ export default function ComparePage() {
 
           {/* SidePanel — рендерится поверх всего, нужен на всех вкладках */}
           {comparison.diffResults && (
-            <SidePanel diffResults={comparison.diffResults} />
+            <SidePanel diffResults={comparison.diffResults} mode="compare" />
           )}
         </>
       )}
