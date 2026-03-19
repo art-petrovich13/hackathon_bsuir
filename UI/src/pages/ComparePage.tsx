@@ -13,6 +13,7 @@ import { useProsecutor } from "../hooks/useProsecutor";
 import ProsecutorAlert from "../components/risk/ProsecutorAlert";
 import RiskBadge from "../components/risk/RiskBadge";
 import type { CompareTab } from "../types";
+import { Clock, Loader2 } from "lucide-react";
 
 const RISK_FILTERS = [
   { level: "CRITICAL" as const, label: "Критических", colorClass: "bg-red-100 text-red-700 border-red-200" },
@@ -241,13 +242,18 @@ function ProsecutorPreview({
   comparisonId: string;
   diffResults: import("../types").DiffResult[];
 }) {
-  const { data: prosecutorData, isLoading } = useProsecutor(comparisonId, diffResults);
+  const { data: prosecutorData, isLoading, isFetching } = useProsecutor(comparisonId);
+
+  const results = prosecutorData?.results ?? [];
+  const readyResults = results.filter((r) => r.prosecutorReport !== null);
+  const isAnalyzing = results.length > 0 && readyResults.length === 0;
+  const noHighRisk = !isLoading && results.length === 0;
 
   if (isLoading) {
     return (
       <div className="text-center py-8">
         <div className="w-6 h-6 border-4 border-red-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-        <p className="text-sm text-gray-500">Загружаем прокурорский анализ...</p>
+        <p className="text-sm text-gray-500">Загружаем данные прокурора...</p>
       </div>
     );
   }
@@ -257,20 +263,56 @@ function ProsecutorPreview({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Scale className="w-4 h-4 text-red-600" />
-          <p className="text-sm font-semibold text-gray-800">Прокурорский анализ — предпросмотр</p>
+          <p className="text-sm font-semibold text-gray-800">Прокурорский анализ</p>
+          {isFetching && (
+            <span className="text-xs text-gray-400 flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> обновляется
+            </span>
+          )}
         </div>
         <Link
           to={`/compare/${comparisonId}/prosecutor`}
           className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors"
         >
           <Scale className="w-4 h-4" />
-          Полный анализ
+          Открыть ПРОКУРОР
         </Link>
       </div>
 
-      {prosecutorData && prosecutorData.length > 0 ? (
+      {/* Нет HIGH нарушений */}
+      {noHighRisk && (
+        <div className="card p-6 text-center">
+          <p className="text-2xl mb-2">✅</p>
+          <p className="font-semibold text-gray-700 mb-1">Нарушений высокого риска нет</p>
+          <p className="text-sm text-gray-500">Все изменения имеют уровень MEDIUM или LOW.</p>
+        </div>
+      )}
+
+      {/* Прокурор ещё анализирует */}
+      {isAnalyzing && (
+        <div className="card p-5 border-l-4 border-l-orange-400">
+          <div className="flex items-center gap-3 mb-3">
+            <Clock className="w-5 h-5 text-orange-500 animate-pulse" />
+            <div>
+              <p className="text-sm font-semibold text-gray-800">Прокурорский анализ выполняется</p>
+              <p className="text-xs text-gray-500">
+                {results.length} изменений высокого риска • Обычно 1–2 минуты
+              </p>
+            </div>
+          </div>
+          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-full bg-orange-400 rounded-full animate-pulse w-1/3" />
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            Вы можете переключиться на другие вкладки — результаты появятся автоматически.
+          </p>
+        </div>
+      )}
+
+      {/* Готовые результаты (предпросмотр до 3) */}
+      {readyResults.length > 0 && (
         <div className="space-y-3">
-          {prosecutorData.slice(0, 3).map((item) => {
+          {readyResults.slice(0, 3).map((item) => {
             const diff = diffResults.find((r) => r.id === item.diffId);
             return (
               <div key={item.diffId}>
@@ -285,26 +327,20 @@ function ProsecutorPreview({
                 <ProsecutorAlert
                   comparisonId={comparisonId}
                   diffId={item.diffId}
-                  analysis={item.prosecutorReport}
+                  analysis={item.prosecutorReport!}
                   compact={true}
                 />
               </div>
             );
           })}
-          {prosecutorData.length > 3 && (
+          {results.length > 3 && (
             <p className="text-sm text-gray-500 text-center">
-              ...и ещё {prosecutorData.length - 3} зон риска.{" "}
+              ...и ещё {results.length - 3} зон риска.{" "}
               <Link to={`/compare/${comparisonId}/prosecutor`} className="text-red-600 underline">
                 Открыть полный анализ
               </Link>
             </p>
           )}
-        </div>
-      ) : (
-        <div className="card p-8 text-center">
-          <p className="text-3xl mb-2">✅</p>
-          <p className="font-semibold text-gray-700 mb-1">Критических нарушений не обнаружено</p>
-          <p className="text-sm text-gray-500">Изменений с высоким прокурорским риском не найдено.</p>
         </div>
       )}
     </div>
