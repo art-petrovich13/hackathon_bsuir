@@ -88,6 +88,7 @@ function mapComparison(raw: Record<string, unknown>): Comparison {
   return {
     id:             String(raw.id ?? ""),
     status:         (raw.status ?? "PENDING") as Comparison["status"],
+    mode:           (raw.mode ?? "pair") as Comparison["mode"],   // ← ДОБАВИТЬ
     docOldId:       String(raw.doc_old_id ?? ""),
     docNewId:       String(raw.doc_new_id ?? ""),
     totalRiskScore: raw.total_risk_score != null ? Number(raw.total_risk_score) : null,
@@ -117,6 +118,38 @@ export async function getComparison(id: string): Promise<Comparison> {
   return mapComparison(response.data);
 }
 
+// ─── Режим 3: Compliance ──────────────────────────────────────────────────────
+
+export interface ComplianceCheckRequest {
+  parent_doc_id: string;  // родительский НПА
+  child_doc_id: string;   // дочерний ЛНА для проверки
+}
+
+export async function createComplianceCheck(
+  payload: ComplianceCheckRequest
+): Promise<CreateComparisonResponse> {
+  const response = await apiClient.post<CreateComparisonResponse>(
+    "/api/compare/compliance",
+    payload
+  );
+  return response.data;
+}
+
+// ─── Режим 4: Audit ───────────────────────────────────────────────────────────
+
+export interface AuditRequest {
+  doc_id: string;
+}
+
+export async function createAudit(
+  payload: AuditRequest
+): Promise<CreateComparisonResponse> {
+  const response = await apiClient.post<CreateComparisonResponse>(
+    "/api/compare/audit",
+    payload
+  );
+  return response.data;
+}
 
 export interface ChainCreateRequest {
   document_ids: string[];

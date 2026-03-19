@@ -4,7 +4,18 @@
 
 export type FileType = "docx" | "pdf";
 
-export type ChangeType = "ADDED" | "DELETED" | "MODIFIED" | "MOVED";
+export type ChangeType =
+  | "ADDED"
+  | "DELETED"
+  | "MODIFIED"
+  | "MOVED"
+  // Режим 3 (compliance): проверка дочернего vs родительского НПА
+  | "COMPLIANCE_VIOLATION"  // явное нарушение
+  | "COMPLIANCE_WARNING"    // предупреждение, требует уточнения
+  | "COMPLIANT"             // соответствует
+  // Режим 4 (audit): аудит одного документа по госзаконодательству
+  | "AUDIT_ISSUE"           // нарушение найдено
+  | "AUDIT_OK";             // нарушений нет
 
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
@@ -108,6 +119,7 @@ export interface ComparisonSummary {
 export interface Comparison {
   id: string;
   status: ComparisonStatus;
+  mode: "pair" | "chain" | "compliance" | "audit";  // ← ДОБАВИТЬ
   docOldId: string;
   docNewId: string;
   totalRiskScore: number | null;
