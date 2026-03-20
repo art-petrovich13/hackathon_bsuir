@@ -73,6 +73,7 @@ export default function ComparePage() {
 
   const criticalHigh = (riskCounts["CRITICAL"] ?? 0) + (riskCounts["HIGH"] ?? 0);
 
+
   return (
     <div className={`transition-all duration-200 ${sidePanelOpen ? "mr-[400px]" : ""}`}>
       <div className="max-w-5xl mx-auto">
