@@ -15,10 +15,9 @@ import RiskBadge from "../components/risk/RiskBadge";
 import type { CompareTab } from "../types";
 import { Clock, Loader2 } from "lucide-react";
 import DocViewer from "../components/diff/DocViewer";
-// DiffViewer оставить — он используется внутри DocViewer как сворачиваемый список
 
 const RISK_FILTERS = [
-  { level: "CRITICAL" as const, label: "Критических", colorClass: "bg-red-100 text-red-700 border-red-200" },
+  { level: "CRITICAL" as const, label: "Критических",  colorClass: "bg-red-100 text-red-700 border-red-200" },
   { level: "HIGH"     as const, label: "Высокий риск", colorClass: "bg-orange-100 text-orange-700 border-orange-200" },
   { level: "MEDIUM"   as const, label: "Средний",      colorClass: "bg-yellow-100 text-yellow-700 border-yellow-200" },
   { level: "LOW"      as const, label: "Низкий",       colorClass: "bg-green-100 text-green-700 border-green-200" },
@@ -73,10 +72,10 @@ export default function ComparePage() {
 
   const criticalHigh = (riskCounts["CRITICAL"] ?? 0) + (riskCounts["HIGH"] ?? 0);
 
-
   return (
     <div className={`transition-all duration-200 ${sidePanelOpen ? "mr-[400px]" : ""}`}>
       <div className="max-w-5xl mx-auto px-4 py-6">
+
         {/* Шапка */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -101,13 +100,13 @@ export default function ComparePage() {
           {isDone && (
             <div className="flex items-center gap-2">
               {criticalHigh > 0 && (
-                <span className="text-xs bg-red-100 text-red-700 border border-red-200 px-2.5 py-1 rounded-full font-medium animate-pulse">
+                <span className="badge-glass text-xs px-2.5 py-1 animate-pulse" style={{ color: "#b91c1c" }}>
                   ⚠ {criticalHigh} рисков
                 </span>
               )}
               <Link
                 to={`/report/${id}`}
-                className="btn-secondary inline-flex items-center gap-2 text-sm py-1.5"
+                className="btn-secondary text-sm py-1.5"
               >
                 <Download className="w-4 h-4" />
                 Отчёт .docx
@@ -116,7 +115,7 @@ export default function ComparePage() {
           )}
         </div>
 
-        {/* ProgressStepper пока обрабатывается */}
+        {/* ProgressStepper */}
         {isProcessing && id && (
           <div className="mb-6">
             <ProgressStepper
@@ -127,20 +126,21 @@ export default function ComparePage() {
           </div>
         )}
 
-        {/* Контент после завершения */}
+        {/* Контент */}
         {isDone && (
           <>
             {/* Вкладки */}
-            <div className="flex gap-1 mb-5 border-b border-gray-200">
+            <div className="flex gap-1 mb-5 border-b border-white/40">
               {TABS.map(({ id: tabId, label, icon: Icon }) => (
                 <button
                   key={tabId}
                   onClick={() => setActiveTab(tabId)}
                   className={`
-                    flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
+                    flex items-center gap-2 px-4 py-2.5 text-sm font-medium
+                    border-b-2 transition-all duration-150
                     ${activeTab === tabId
-                      ? "border-primary-600 text-primary-700"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                      ? "border-violet-500 text-violet-700 font-semibold"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-white/60"
                     }
                   `}
                 >
@@ -158,10 +158,10 @@ export default function ComparePage() {
             {/* Вкладка: Изменения */}
             {activeTab === "diff" && comparison.diffResults && (
               <>
-                {/* Быстрые фильтры по риску */}
+                {/* Фильтры по риску */}
                 {Object.values(riskCounts).some((v) => v > 0) && (
                   <div className="flex flex-wrap gap-2 mb-4">
-                    {RISK_FILTERS.map(({ level, label, colorClass }) => {
+                    {RISK_FILTERS.map(({ level, label }) => {
                       const count = riskCounts[level] ?? 0;
                       if (count === 0) return null;
                       const isActive = filters.riskLevels.includes(level);
@@ -170,10 +170,9 @@ export default function ComparePage() {
                           key={level}
                           onClick={() => toggleRiskFilter(level)}
                           className={`
-                            inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm
-                            border font-medium transition-all
-                            ${colorClass}
-                            ${isActive ? "ring-2 ring-offset-1 ring-gray-400" : "opacity-80 hover:opacity-100"}
+                            badge-glass inline-flex items-center gap-1.5 px-3 py-1.5
+                            text-sm cursor-pointer transition-all
+                            ${isActive ? "ring-2 ring-violet-400/50 ring-offset-1" : "opacity-80 hover:opacity-100"}
                           `}
                         >
                           {count} {label}
@@ -198,11 +197,10 @@ export default function ComparePage() {
                     placeholder="🔍  Поиск по тексту изменений..."
                     value={filters.searchQuery}
                     onChange={(e) => setFilter("searchQuery", e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                    className="input-glass"
                   />
                 </div>
 
-                {/* ✅ ИЗМЕНЕНО: DiffViewer → DocViewer */}
                 <DocViewer diffResults={comparison.diffResults} />
               </>
             )}
@@ -228,7 +226,6 @@ export default function ComparePage() {
               />
             )}
 
-            {/* SidePanel — рендерится поверх всего, нужен на всех вкладках */}
             {comparison.diffResults && (
               <SidePanel diffResults={comparison.diffResults} mode="compare" />
             )}
@@ -278,14 +275,13 @@ function ProsecutorPreview({
         </div>
         <Link
           to={`/compare/${comparisonId}/prosecutor`}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors"
+          className="btn-primary text-sm py-1.5"
         >
           <Scale className="w-4 h-4" />
           Открыть ПРОКУРОР
         </Link>
       </div>
 
-      {/* Нет HIGH нарушений */}
       {noHighRisk && (
         <div className="card p-6 text-center">
           <p className="text-2xl mb-2">✅</p>
@@ -294,20 +290,19 @@ function ProsecutorPreview({
         </div>
       )}
 
-      {/* Прокурор ещё анализирует */}
       {isAnalyzing && (
-        <div className="card p-5 border-l-4 border-l-orange-400">
+        <div className="card p-5" style={{ borderLeft: "4px solid rgba(249,115,22,0.6)" }}>
           <div className="flex items-center gap-3 mb-3">
             <Clock className="w-5 h-5 text-orange-500 animate-pulse" />
             <div>
               <p className="text-sm font-semibold text-gray-800">Прокурорский анализ выполняется</p>
               <p className="text-xs text-gray-500">
-                {results.length} изменений высокого риска • Обычно 1–2 минуты
+                {results.length} изменений высокого риска · Обычно 1–2 минуты
               </p>
             </div>
           </div>
-          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-orange-400 rounded-full animate-pulse w-1/3" />
+          <div className="progress-glass">
+            <div style={{ width: "33%", animation: "pulse 2s infinite" }} />
           </div>
           <p className="text-xs text-gray-400 mt-2">
             Вы можете переключиться на другие вкладки — результаты появятся автоматически.
@@ -315,7 +310,6 @@ function ProsecutorPreview({
         </div>
       )}
 
-      {/* Готовые результаты (предпросмотр до 3) */}
       {readyResults.length > 0 && (
         <div className="space-y-3">
           {readyResults.slice(0, 3).map((item) => {
@@ -324,7 +318,7 @@ function ProsecutorPreview({
               <div key={item.diffId}>
                 {diff && (
                   <div className="flex items-center gap-2 mb-1 px-1">
-                    <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono text-gray-600">
+                    <code className="text-xs bg-white/40 backdrop-blur px-1.5 py-0.5 rounded font-mono text-gray-600 border border-white/60">
                       п. {diff.sectionPath}
                     </code>
                     {diff.riskLevel && <RiskBadge level={diff.riskLevel} size="sm" />}
@@ -342,7 +336,7 @@ function ProsecutorPreview({
           {results.length > 3 && (
             <p className="text-sm text-gray-500 text-center">
               ...и ещё {results.length - 3} зон риска.{" "}
-              <Link to={`/compare/${comparisonId}/prosecutor`} className="text-red-600 underline">
+              <Link to={`/compare/${comparisonId}/prosecutor`} className="text-violet-600 underline">
                 Открыть полный анализ
               </Link>
             </p>
