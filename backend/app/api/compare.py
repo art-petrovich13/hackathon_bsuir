@@ -18,6 +18,8 @@ from app.schemas import (
 from app.schemas.diff_result import DiffResultSchema
 from app.tasks.analysis import analyze_comparison
 
+from sqlalchemy.orm.attributes import flag_modified
+
 router = APIRouter(prefix="/api", tags=["Compare"])
 
 _ws_connections: dict[str, list[WebSocket]] = {}
@@ -186,6 +188,7 @@ async def create_chain_comparison(
         comparison_ids.append(saved.id)
 
     chain.comparison_ids = comparison_ids
+    flag_modified(chain, "comparison_ids")   # ← сказать SQLAlchemy что JSON изменился
     await db.flush()
     await db.commit()
 

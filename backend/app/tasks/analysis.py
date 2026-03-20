@@ -678,10 +678,21 @@ async def _audit_async(task: Task, comparison_id: str):
                 "moved":    0,
                 **risk_counts,
             }
-            avg_score = (
-                sum(r["risk_score"] for r in diff_results_to_save) / len(diff_results_to_save)
-                if diff_results_to_save else 0.0
-            )
+            
+            violation_scores = [
+                r["risk_score"] for r in diff_results_to_save
+                if r["change_type"] == "AUDIT_ISSUE"
+            ]
+
+            if violation_scores:
+                # Взвешенный score: среднее по нарушениям, но масштабируем
+                # чтобы отразить долю нарушений в документе
+                violation_ratio = len(violation_scores) / max(len(diff_results_to_save), 1)
+                avg_violations = sum(violation_scores) / len(violation_scores)
+                # Итог: серьёзность × частота нарушений
+                avg_score = min(avg_violations * (0.4 + 0.6 * violation_ratio), 100.0)
+            else:
+                avg_score = 0.0
 
             await db.execute(
                 update(Comparison)

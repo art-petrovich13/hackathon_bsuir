@@ -2,14 +2,15 @@
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Shield, CheckCircle2 } from "lucide-react";
 import { useComparison } from "../hooks/useComparison";
+import { useUiStore } from "../store/uiStore";
 import ProgressStepper from "../components/upload/ProgressStepper";
 import DocViewer from "../components/diff/DocViewer";
 import SidePanel from "../components/diff/SidePanel";
-import { useUiStore } from "../store/uiStore";
 
 export default function CompliancePage() {
   const { id } = useParams<{ id: string }>();
   const { data: comparison, isLoading, isError } = useComparison(id);
+  const { sidePanelOpen } = useUiStore();   // ← для отступа под панель
 
   const isDone = comparison?.status === "DONE";
   const isProcessing = comparison && !isDone && comparison.status !== "ERROR";
@@ -33,15 +34,15 @@ export default function CompliancePage() {
     );
   }
 
-  // Статистика по нарушениям
-  const violations = comparison.diffResults?.filter((r) => r.changeType === "COMPLIANCE_VIOLATION") ?? [];
-  const warnings = comparison.diffResults?.filter((r) => r.changeType === "COMPLIANCE_WARNING") ?? [];
-  const compliant = comparison.diffResults?.filter((r) => r.changeType === "COMPLIANT") ?? [];
-  const criticalHigh = comparison.diffResults?.filter((r) => r.riskLevel === "HIGH" || r.riskLevel === "CRITICAL") ?? [];
-
-  const { sidePanelOpen } = useUiStore();
+  const violations   = comparison.diffResults?.filter((r) => r.changeType === "COMPLIANCE_VIOLATION") ?? [];
+  const warnings     = comparison.diffResults?.filter((r) => r.changeType === "COMPLIANCE_WARNING") ?? [];
+  const compliant    = comparison.diffResults?.filter((r) => r.changeType === "COMPLIANT") ?? [];
+  const criticalHigh = comparison.diffResults?.filter(
+    (r) => r.riskLevel === "HIGH" || r.riskLevel === "CRITICAL"
+  ) ?? [];
 
   return (
+    // Отступ справа когда панель открыта — панель 400px wide
     <div className={`transition-all duration-200 ${sidePanelOpen ? "mr-[400px]" : ""}`}>
       <div className="max-w-5xl mx-auto">
         {/* Шапка */}
@@ -65,12 +66,16 @@ export default function CompliancePage() {
           )}
         </div>
 
-        {/* Прогресс пока обрабатывается */}
+        {/* Прогресс */}
         {isProcessing && id && (
           <div className="mb-6">
-            <ProgressStepper comparisonId={id} currentStatus={comparison.status} onDone={() => { }} />
+            <ProgressStepper
+              comparisonId={id}
+              currentStatus={comparison.status}
+              onDone={() => {}}
+            />
             <p className="text-center text-xs text-gray-400 mt-2">
-              Проверяем каждый раздел дочернего ЛНА... Обычно занимает 2–4 минуты.
+              Проверяем каждый раздел дочернего ЛНА... Обычно 2–4 минуты.
             </p>
           </div>
         )}
@@ -94,18 +99,23 @@ export default function CompliancePage() {
               </div>
             </div>
 
-            {/* Сообщение если всё хорошо */}
+            {/* Всё хорошо */}
             {violations.length === 0 && warnings.length === 0 && (
               <div className="card p-8 text-center mb-6">
                 <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
                 <h2 className="text-lg font-bold text-gray-800 mb-1">Нарушений не обнаружено</h2>
-                <p className="text-gray-500">Дочерний ЛНА соответствует родительскому НПА и законодательству РБ.</p>
+                <p className="text-gray-500">
+                  Дочерний ЛНА соответствует родительскому НПА и законодательству РБ.
+                </p>
               </div>
             )}
 
-            {/* DocViewer с нарушениями */}
+            {/* DocViewer — показывает документ с нарушениями */}
             {comparison.diffResults && comparison.diffResults.length > 0 && (
-              <DocViewer diffResults={comparison.diffResults} mode="compliance" />
+              <DocViewer
+                diffResults={comparison.diffResults}
+                mode="compliance"
+              />
             )}
 
             {/* SidePanel */}
