@@ -92,7 +92,7 @@ export default function ProgressStepper({ comparisonId, currentStatus: polledSta
       <h3 className="text-sm font-semibold text-gray-700 mb-4">Прогресс анализа</h3>
 
       {/* Шаги */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center">
         {STEPS.map((step, i) => {
           const isDone = i < activeIndex || (currentStatus === "DONE" && i === 3);
           const isActive = i === activeIndex && currentStatus !== "DONE";
@@ -130,7 +130,7 @@ export default function ProgressStepper({ comparisonId, currentStatus: polledSta
 
               {/* Линия соединения (кроме последнего шага) */}
               {i < STEPS.length - 1 && (
-                <div className="flex-1 h-0.5 mb-5 rounded-full bg-gray-200 overflow-hidden">
+                <div className="flex-1 h-0.5 mb-4 mx-1 rounded-full bg-gray-200 overflow-hidden">
                   <div
                     className={`h-full bg-green-500 transition-all duration-700 ${
                       i < activeIndex ? "w-full" : "w-0"

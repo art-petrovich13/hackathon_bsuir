@@ -81,11 +81,14 @@ export default function SidePanel({ diffResults, mode = "compare" }: SidePanelPr
 
   return (
     <>
-      {/* Затемнение (мобильный) */}
-      <div className="fixed inset-0 bg-black/20 z-30 md:hidden" onClick={closeSidePanel} />
+      {/* Затемнение — только на мобильном */}
+      <div
+        className="fixed inset-0 bg-black/30 z-30 md:hidden"
+        onClick={closeSidePanel}
+      />
 
       {/* Панель */}
-      <div className="fixed top-0 right-0 h-full w-full md:w-[420px] bg-white shadow-2xl z-40 flex flex-col overflow-hidden border-l border-gray-200">
+      <div className="fixed top-0 right-0 h-full w-[400px] bg-white shadow-2xl z-40 flex flex-col overflow-hidden border-l border-gray-200 transition-transform duration-200">
 
         {/* Шапка */}
         <div className={`flex items-center justify-between px-5 py-4 border-b ${headerBg}`}>

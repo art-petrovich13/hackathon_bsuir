@@ -1,5 +1,5 @@
 // src/components/diff/DocViewer.tsx
-import { useState, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, List } from "lucide-react";
 import { useUiStore } from "../../store/uiStore";
 import { computeWordDiff } from "../../utils/wordDiff";
@@ -11,73 +11,98 @@ interface DocViewerProps {
   mode?: "compare" | "compliance" | "audit";
 }
 
-const CHANGE_CONFIG = {
+// ─── Конфиг подсветки ────────────────────────────────────────────────────────
+
+const CHANGE_CONFIG: Record<string, {
+  lineClass: string;        // подсветка всей строки
+  markerClass: string;      // левая полоска (бордер)
+  badge: { text: string; cls: string };
+  textClass: string;        // цвет текста
+}> = {
   ADDED: {
-    bgClass: "bg-green-50 border-l-4 border-l-green-500 hover:bg-green-100",
-    badge: { text: "+ новый", cls: "bg-green-100 text-green-700" },
+    lineClass: "bg-green-50",
+    markerClass: "border-l-4 border-l-green-500",
+    badge: { text: "+ добавлен", cls: "bg-green-100 text-green-700" },
+    textClass: "text-green-900",
   },
   DELETED: {
-    bgClass: "bg-red-50 border-l-4 border-l-red-500 hover:bg-red-100",
+    lineClass: "bg-red-50",
+    markerClass: "border-l-4 border-l-red-400",
     badge: { text: "– удалён", cls: "bg-red-100 text-red-700" },
+    textClass: "text-red-800 line-through opacity-60",
   },
   MODIFIED: {
-    bgClass: "bg-yellow-50 border-l-4 border-l-yellow-500 hover:bg-yellow-100",
+    lineClass: "bg-yellow-50",
+    markerClass: "border-l-4 border-l-yellow-400",
     badge: { text: "~ изменён", cls: "bg-yellow-100 text-yellow-700" },
+    textClass: "text-gray-800",
   },
   MOVED: {
-    bgClass: "bg-blue-50 border-l-4 border-l-blue-500 hover:bg-blue-100",
+    lineClass: "bg-blue-50",
+    markerClass: "border-l-4 border-l-blue-400",
     badge: { text: "↕ перемещён", cls: "bg-blue-100 text-blue-700" },
+    textClass: "text-blue-900",
   },
   COMPLIANCE_VIOLATION: {
-    bgClass: "bg-red-50 border-l-4 border-l-red-600 hover:bg-red-100",
+    lineClass: "bg-red-50",
+    markerClass: "border-l-4 border-l-red-600",
     badge: { text: "⚠ нарушение", cls: "bg-red-100 text-red-800" },
+    textClass: "text-gray-800",
   },
   COMPLIANCE_WARNING: {
-    bgClass: "bg-orange-50 border-l-4 border-l-orange-500 hover:bg-orange-100",
+    lineClass: "bg-orange-50",
+    markerClass: "border-l-4 border-l-orange-400",
     badge: { text: "! предупреждение", cls: "bg-orange-100 text-orange-700" },
+    textClass: "text-gray-800",
   },
   COMPLIANT: {
-    bgClass: "bg-green-50 border-l-4 border-l-green-400 hover:bg-green-100",
-    badge: { text: "✓ соответствует", cls: "bg-green-100 text-green-700" },
+    lineClass: "bg-white",
+    markerClass: "border-l-4 border-l-green-300",
+    badge: { text: "✓ ок", cls: "bg-green-50 text-green-600" },
+    textClass: "text-gray-700",
   },
   AUDIT_ISSUE: {
-    bgClass: "bg-red-50 border-l-4 border-l-red-600 hover:bg-red-100",
+    lineClass: "bg-red-50",
+    markerClass: "border-l-4 border-l-red-600",
     badge: { text: "⚠ нарушение", cls: "bg-red-100 text-red-800" },
+    textClass: "text-gray-800",
   },
   AUDIT_OK: {
-    bgClass: "bg-gray-50 border-l-4 border-l-gray-300 hover:bg-gray-100",
-    badge: { text: "✓ ок", cls: "bg-gray-100 text-gray-600" },
+    lineClass: "bg-white",
+    markerClass: "border-l-4 border-l-gray-200",
+    badge: { text: "✓ ок", cls: "bg-gray-100 text-gray-500" },
+    textClass: "text-gray-600",
   },
-} as const;
+};
 
-// ─── InlineWordDiff ───────────────────────────────────────────────────────────
+// ─── Inline word diff (для MODIFIED) ─────────────────────────────────────────
 
 function InlineWordDiff({ oldText, newText }: { oldText: string; newText: string }) {
-  const chunks = computeWordDiff(oldText, newText);
+  const chunks = useMemo(() => computeWordDiff(oldText, newText), [oldText, newText]);
   return (
-    <span className="text-sm leading-relaxed text-gray-800">
-      {chunks.map((chunk, idx) => {
+    <span>
+      {chunks.map((chunk, i) => {
         if (chunk.tag === "equal")
-          return <span key={idx}>{chunk.newWords.join(" ")} </span>;
+          return <span key={i}>{chunk.newWords.join(" ")} </span>;
         if (chunk.tag === "delete")
           return (
-            <span key={idx} className="line-through text-red-600 bg-red-100 px-0.5 rounded mx-0.5">
+            <span key={i} className="line-through text-red-500 bg-red-100 rounded px-0.5 mx-0.5">
               {chunk.oldWords.join(" ")}
             </span>
           );
         if (chunk.tag === "insert")
           return (
-            <span key={idx} className="underline text-green-700 bg-green-100 px-0.5 rounded mx-0.5">
+            <span key={i} className="text-green-700 bg-green-100 rounded px-0.5 mx-0.5 font-medium">
               {chunk.newWords.join(" ")}
             </span>
           );
         if (chunk.tag === "replace")
           return (
-            <span key={idx}>
-              <span className="line-through text-red-600 bg-red-100 px-0.5 rounded mx-0.5">
+            <span key={i}>
+              <span className="line-through text-red-500 bg-red-100 rounded px-0.5 mx-0.5">
                 {chunk.oldWords.join(" ")}
               </span>{" "}
-              <span className="underline text-green-700 bg-green-100 px-0.5 rounded mx-0.5">
+              <span className="text-green-700 bg-green-100 rounded px-0.5 mx-0.5 font-medium">
                 {chunk.newWords.join(" ")}
               </span>
             </span>
@@ -88,80 +113,121 @@ function InlineWordDiff({ oldText, newText }: { oldText: string; newText: string
   );
 }
 
-// ─── DocParagraph ─────────────────────────────────────────────────────────────
+// ─── Определить тип параграфа по section_path ─────────────────────────────────
 
-interface DocParagraphProps {
+function getHeadingLevel(sectionPath: string): number {
+  // "1" → H1, "1.1" → H2, "1.1.1" → H3, "1.1.p1" → paragraph
+  const parts = sectionPath.split(".");
+  if (parts.length === 1 && !/p\d/.test(parts[0])) return 1;
+  if (parts.length === 2 && !/p\d/.test(parts[1])) return 2;
+  if (parts.length === 3 && !/p\d/.test(parts[2])) return 3;
+  return 0; // обычный параграф
+}
+
+function getHeadingClass(level: number): string {
+  if (level === 1) return "text-base font-bold text-gray-900 tracking-tight";
+  if (level === 2) return "text-sm font-semibold text-gray-800";
+  if (level === 3) return "text-sm font-medium text-gray-700";
+  return "text-sm text-gray-800 leading-relaxed";
+}
+
+function getIndentClass(level: number): string {
+  if (level === 0) return "pl-6";
+  if (level === 1) return "pl-0";
+  if (level === 2) return "pl-4";
+  return "pl-8";
+}
+
+// ─── Параграф документа ──────────────────────────────────────────────────────
+
+interface DocParaProps {
   result: DiffResult;
   isSelected: boolean;
   onHover: () => void;
   onClick: () => void;
 }
 
-function DocParagraph({ result, isSelected, onHover, onClick }: DocParagraphProps) {
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+function DocParagraph({ result, isSelected, onHover, onClick }: DocParaProps) {
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cfg = (result.changeType in CHANGE_CONFIG
+    ? CHANGE_CONFIG[result.changeType as keyof typeof CHANGE_CONFIG]
+    : undefined) ?? CHANGE_CONFIG.MODIFIED;
 
-  const handleMouseEnter = () => {
-    hoverTimerRef.current = setTimeout(() => onHover(), 350);
-  };
-  const handleMouseLeave = () => clearTimeout(hoverTimerRef.current);
+  const headingLevel = getHeadingLevel(result.sectionPath);
+  const textClass = headingLevel > 0
+    ? getHeadingClass(headingLevel)
+    : cfg.textClass + " " + getHeadingClass(0);
+  const indent = getIndentClass(headingLevel);
 
-  const config =
-    (result.changeType in CHANGE_CONFIG
-      ? CHANGE_CONFIG[result.changeType as keyof typeof CHANGE_CONFIG]
-      : undefined) ?? CHANGE_CONFIG.MODIFIED;
+  const text = result.newText ?? result.oldText ?? "";
 
   return (
     <div
-      className={`px-4 py-3 rounded-r-lg cursor-pointer transition-all duration-150 ${config.bgClass} ${
-        isSelected ? "ring-2 ring-primary-400 ring-offset-1" : ""
-      }`}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      className={`
+        group relative ${cfg.markerClass} ${cfg.lineClass}
+        ${indent} py-2 pr-3 cursor-pointer
+        transition-all duration-100
+        ${isSelected ? "ring-2 ring-inset ring-primary-400 ring-opacity-50" : "hover:brightness-95"}
+      `}
+      onMouseEnter={() => {
+        hoverTimer.current = setTimeout(onHover, 300);
+      }}
+      onMouseLeave={() => clearTimeout(hoverTimer.current)}
       onClick={onClick}
     >
-      <div className="flex items-center gap-2 mb-1.5">
-        <code className="text-xs text-gray-400 font-mono">п. {result.sectionPath}</code>
-        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${config.badge.cls}`}>
-          {config.badge.text}
-        </span>
-        {result.riskLevel && result.riskLevel !== "LOW" && (
-          <span
-            className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-              result.riskLevel === "CRITICAL"
-                ? "bg-red-200 text-red-900"
-                : result.riskLevel === "HIGH"
-                ? "bg-orange-200 text-orange-900"
-                : "bg-yellow-200 text-yellow-900"
-            }`}
-          >
-            {result.riskLevel}
-          </span>
-        )}
-        <span className="ml-auto text-xs text-gray-400 italic">клик → детали</span>
-      </div>
+      {/* Бейдж типа изменения — только при наведении или выборе */}
+      <span
+        className={`
+          absolute right-2 top-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium
+          opacity-0 group-hover:opacity-100 transition-opacity
+          ${isSelected ? "opacity-100" : ""}
+          ${cfg.badge.cls}
+        `}
+      >
+        {cfg.badge.text}
+      </span>
 
-      {result.changeType === "MODIFIED" && result.oldText && result.newText ? (
-        <InlineWordDiff oldText={result.oldText} newText={result.newText} />
-      ) : result.changeType === "DELETED" ? (
-        <span className="text-sm leading-relaxed text-red-800 line-through opacity-70">
-          {result.oldText}
-        </span>
-      ) : (
-        <span className="text-sm leading-relaxed text-gray-800">
-          {result.newText ?? result.oldText ?? "—"}
+      {/* Номер раздела (маленький, серый) */}
+      <span className="text-[10px] text-gray-300 font-mono mr-2 select-none">
+        {result.sectionPath}
+      </span>
+
+      {/* Текст */}
+      <span className={textClass}>
+        {result.changeType === "MODIFIED" && result.oldText && result.newText ? (
+          <InlineWordDiff oldText={result.oldText} newText={result.newText} />
+        ) : result.changeType === "DELETED" ? (
+          <span className="line-through opacity-60">{result.oldText}</span>
+        ) : (
+          text
+        )}
+      </span>
+
+      {/* Бейдж риска */}
+      {result.riskLevel && result.riskLevel !== "LOW" && (
+        <span
+          className={`
+            ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-semibold
+            ${result.riskLevel === "CRITICAL" ? "bg-red-200 text-red-900"
+              : result.riskLevel === "HIGH" ? "bg-orange-200 text-orange-900"
+              : "bg-yellow-200 text-yellow-900"}
+          `}
+        >
+          {result.riskLevel}
         </span>
       )}
     </div>
   );
 }
 
-// ─── DocViewer ────────────────────────────────────────────────────────────────
+// ─── Главный компонент DocViewer ──────────────────────────────────────────────
 
 export default function DocViewer({ diffResults, mode = "compare" }: DocViewerProps) {
   const { selectedDiffId, openSidePanel, filters } = useUiStore();
   const [listExpanded, setListExpanded] = useState(false);
   const [showAllSections, setShowAllSections] = useState(false);
 
+  // Фильтрация
   const filtered = diffResults.filter((r) => {
     if (filters.riskLevels.length > 0 && r.riskLevel && !filters.riskLevels.includes(r.riskLevel))
       return false;
@@ -169,27 +235,28 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
       return false;
     if (filters.searchQuery) {
       const q = filters.searchQuery.toLowerCase();
-      const inOld = r.oldText?.toLowerCase().includes(q) ?? false;
-      const inNew = r.newText?.toLowerCase().includes(q) ?? false;
-      const inPath = r.sectionPath.toLowerCase().includes(q);
-      if (!inOld && !inNew && !inPath) return false;
+      if (
+        !r.oldText?.toLowerCase().includes(q) &&
+        !r.newText?.toLowerCase().includes(q) &&
+        !r.sectionPath.toLowerCase().includes(q)
+      )
+        return false;
     }
     return true;
   });
 
-  // Для compliance/audit — по умолчанию скрываем "зелёные" OK записи
+  // Для compliance/audit — скрываем OK-разделы по умолчанию
+  // Важно: не фильтруем по riskLevel !== LOW, иначе пропадают нарушения с LOW риском
+  const isComplianceMode = mode === "compliance" || mode === "audit";
   const displayResults =
-    (mode === "compliance" || mode === "audit") && !showAllSections
+    isComplianceMode && !showAllSections
       ? filtered.filter(
-          (r) =>
-            r.changeType !== "AUDIT_OK" &&
-            r.changeType !== "COMPLIANT" &&
-            r.riskLevel !== "LOW"
+          (r) => r.changeType !== "AUDIT_OK" && r.changeType !== "COMPLIANT"
         )
       : filtered;
 
   const hiddenOkCount =
-    (mode === "compliance" || mode === "audit") && !showAllSections
+    isComplianceMode && !showAllSections
       ? filtered.length - displayResults.length
       : 0;
 
@@ -214,78 +281,106 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
   }
 
   return (
-    <div className="space-y-1">
-      {/* Счётчик */}
-      <p className="text-sm text-gray-500 mb-3">
-        Показано <span className="font-semibold text-gray-800">{displayResults.length}</span> из{" "}
-        <span className="font-semibold text-gray-800">{diffResults.length}</span> разделов
-      </p>
-
-      {/* Кнопка показать OK разделы (только для compliance/audit) */}
-      {(mode === "compliance" || mode === "audit") && hiddenOkCount > 0 && (
-        <div className="flex items-center justify-between mb-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-          <p className="text-xs text-green-700">
-            ✅ Скрыто {hiddenOkCount} разделов без нарушений
-          </p>
+    <div>
+      {/* Шапка счётчика + кнопка скрытых разделов */}
+      <div className="flex items-center justify-between mb-3 text-sm text-gray-500">
+        <span>
+          Показано <strong className="text-gray-800">{displayResults.length}</strong> из{" "}
+          <strong className="text-gray-800">{diffResults.length}</strong>{" "}
+          {isComplianceMode ? "разделов" : "изменений"}
+        </span>
+        {isComplianceMode && hiddenOkCount > 0 && (
           <button
-            onClick={() => setShowAllSections((v) => !v)}
+            onClick={() => setShowAllSections(true)}
             className="text-xs text-green-600 hover:text-green-800 font-medium underline"
           >
-            Показать все
+            ✅ + {hiddenOkCount} без нарушений
           </button>
-        </div>
-      )}
-
-      {/* Кнопка скрыть (когда showAll=true) */}
-      {(mode === "compliance" || mode === "audit") && showAllSections && hiddenOkCount >= 0 && (
-        <div className="flex items-center justify-end mb-2">
+        )}
+        {isComplianceMode && showAllSections && (
           <button
             onClick={() => setShowAllSections(false)}
             className="text-xs text-gray-400 hover:text-gray-600 font-medium underline"
           >
-            Скрыть разделы без нарушений
+            Скрыть без нарушений
           </button>
-        </div>
-      )}
-
-      {/* Список параграфов */}
-      <div className="space-y-1">
-        {displayResults.map((result) => (
-          <DocParagraph
-            key={result.id}
-            result={result}
-            isSelected={selectedDiffId === result.id}
-            onHover={() => openSidePanel(result.id)}
-            onClick={() => openSidePanel(result.id)}
-          />
-        ))}
+        )}
       </div>
 
-      {/* Сворачиваемый список карточек */}
-      <div className="mt-6 border border-gray-200 rounded-xl overflow-hidden">
+      {/* ── ДОКУМЕНТ — Word-like отображение ─────────────────────────── */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        {/* Заголовок «документа» */}
+        <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+          <div className="flex gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-red-400" />
+            <span className="w-3 h-3 rounded-full bg-yellow-400" />
+            <span className="w-3 h-3 rounded-full bg-green-400" />
+          </div>
+          <span className="text-xs text-gray-400 ml-2">Документ с изменениями</span>
+          <div className="ml-auto flex items-center gap-3 text-[10px] text-gray-400">
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-green-200 border-l-2 border-green-500" />
+              добавлено
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-yellow-200 border-l-2 border-yellow-400" />
+              изменено
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-200 border-l-2 border-red-400" />
+              удалено / нарушение
+            </span>
+          </div>
+        </div>
+
+        {/* Страница документа */}
+        <div className="divide-y divide-gray-100">
+          {displayResults.map((result, idx) => {
+            // Разделитель между несмежными секциями
+            const prev = displayResults[idx - 1];
+            const showDivider =
+              prev &&
+              !result.sectionPath.startsWith(prev.sectionPath.split(".")[0]);
+
+            return (
+              <div key={result.id}>
+                {showDivider && (
+                  <div className="px-6 py-1 text-center text-[10px] text-gray-300 select-none">
+                    · · ·
+                  </div>
+                )}
+                <DocParagraph
+                  result={result}
+                  isSelected={selectedDiffId === result.id}
+                  onHover={() => openSidePanel(result.id)}
+                  onClick={() => openSidePanel(result.id)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Сворачиваемый список карточек ──────────────────────────────── */}
+      <div className="mt-4 border border-gray-200 rounded-xl overflow-hidden">
         <button
-          onClick={() => setListExpanded((prev) => !prev)}
-          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
+          onClick={() => setListExpanded((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-600"
         >
           <div className="flex items-center gap-2">
             <List className="w-4 h-4" />
             Список изменений ({displayResults.length})
           </div>
-          {listExpanded ? (
-            <ChevronUp className="w-4 h-4 text-gray-400" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          )}
+          {listExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         </button>
-
         {listExpanded && (
           <div className="p-4 space-y-3">
-            {displayResults.map((result) => (
+            {displayResults.map((r) => (
               <DiffBlock
-                key={result.id}
-                result={result}
-                isSelected={selectedDiffId === result.id}
-                onClick={() => openSidePanel(result.id)}
+                key={r.id}
+                result={r}
+                isSelected={selectedDiffId === r.id}
+                onClick={() => openSidePanel(r.id)}
               />
             ))}
           </div>
