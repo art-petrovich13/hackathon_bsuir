@@ -44,7 +44,7 @@ export default function CompliancePage() {
   return (
     // Отступ справа когда панель открыта — панель 400px wide
     <div className={`transition-all duration-200 ${sidePanelOpen ? "mr-[400px]" : ""}`}>
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-5xl mx-auto px-4 py-6 overflow-x-hidden">
         {/* Шапка */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">

@@ -14,10 +14,10 @@ interface DocViewerProps {
 // ─── Конфиг подсветки ────────────────────────────────────────────────────────
 
 const CHANGE_CONFIG: Record<string, {
-  lineClass: string;        // подсветка всей строки
-  markerClass: string;      // левая полоска (бордер)
+  lineClass: string;
+  markerClass: string;
   badge: { text: string; cls: string };
-  textClass: string;        // цвет текста
+  textClass: string;
 }> = {
   ADDED: {
     lineClass: "bg-green-50",
@@ -75,6 +75,9 @@ const CHANGE_CONFIG: Record<string, {
   },
 };
 
+// Цвет фона страницы — используется для concave-уголков выбранного параграфа
+const PAGE_BG = "#ffffff";
+
 // ─── Inline word diff (для MODIFIED) ─────────────────────────────────────────
 
 function InlineWordDiff({ oldText, newText }: { oldText: string; newText: string }) {
@@ -116,12 +119,11 @@ function InlineWordDiff({ oldText, newText }: { oldText: string; newText: string
 // ─── Определить тип параграфа по section_path ─────────────────────────────────
 
 function getHeadingLevel(sectionPath: string): number {
-  // "1" → H1, "1.1" → H2, "1.1.1" → H3, "1.1.p1" → paragraph
   const parts = sectionPath.split(".");
   if (parts.length === 1 && !/p\d/.test(parts[0])) return 1;
   if (parts.length === 2 && !/p\d/.test(parts[1])) return 2;
   if (parts.length === 3 && !/p\d/.test(parts[2])) return 3;
-  return 0; // обычный параграф
+  return 0;
 }
 
 function getHeadingClass(level: number): string {
@@ -158,41 +160,99 @@ function DocParagraph({ result, isSelected, onHover, onClick }: DocParaProps) {
     ? getHeadingClass(headingLevel)
     : cfg.textClass + " " + getHeadingClass(0);
   const indent = getIndentClass(headingLevel);
-
   const text = result.newText ?? result.oldText ?? "";
 
+  // ── Выбранный параграф — фиолетовый градиент с вогнутыми уголками ──────────
+  if (isSelected) {
+    return (
+      <div className="relative" style={{ zIndex: 2, marginRight: "-1rem" }}>
+        {/* Верхний вогнутый угол */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute", top: -14, right: 0,
+            width: 14, height: 14,
+            background: "transparent",
+            borderBottomRightRadius: 10,
+            boxShadow: `4px 4px 0 4px ${PAGE_BG}`,
+            pointerEvents: "none", zIndex: 3,
+          }}
+        />
+        {/* Нижний вогнутый угол */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute", bottom: -14, right: 0,
+            width: 14, height: 14,
+            background: "transparent",
+            borderTopRightRadius: 10,
+            boxShadow: `4px -4px 0 4px ${PAGE_BG}`,
+            pointerEvents: "none", zIndex: 3,
+          }}
+        />
+        {/* Строка */}
+        <div
+          className={`${indent} py-2 pr-4 cursor-pointer transition-all duration-200`}
+          style={{
+            background: "linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%)",
+            borderRadius: "10px 0 0 10px",
+            boxShadow: "0 4px 20px rgba(109, 40, 217, 0.35)",
+          }}
+          onMouseEnter={() => { hoverTimer.current = setTimeout(onHover, 300); }}
+          onMouseLeave={() => clearTimeout(hoverTimer.current)}
+          onClick={onClick}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] text-violet-300 font-mono select-none">{result.sectionPath}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-white/20 text-white border border-white/30">
+              {cfg.badge.text}
+            </span>
+            {result.riskLevel && result.riskLevel !== "LOW" && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-white/20 text-white border border-white/25">
+                {result.riskLevel}
+              </span>
+            )}
+            <span className="ml-auto text-[10px] text-violet-300 italic">открыто →</span>
+          </div>
+          <span className={headingLevel > 0 ? getHeadingClass(headingLevel) : "text-sm leading-relaxed"} style={{ color: "white" }}>
+            {result.changeType === "MODIFIED" && result.oldText && result.newText ? (
+              <InlineWordDiff oldText={result.oldText} newText={result.newText} />
+            ) : result.changeType === "DELETED" ? (
+              <span className="line-through opacity-70">{result.oldText}</span>
+            ) : (
+              text
+            )}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Обычный параграф ────────────────────────────────────────────────────────
   return (
     <div
       className={`
         group relative ${cfg.markerClass} ${cfg.lineClass}
         ${indent} py-2 pr-3 cursor-pointer
-        transition-all duration-100
-        ${isSelected ? "ring-2 ring-inset ring-primary-400 ring-opacity-50" : "hover:brightness-95"}
+        transition-all duration-100 hover:brightness-95
       `}
-      onMouseEnter={() => {
-        hoverTimer.current = setTimeout(onHover, 300);
-      }}
+      onMouseEnter={() => { hoverTimer.current = setTimeout(onHover, 300); }}
       onMouseLeave={() => clearTimeout(hoverTimer.current)}
       onClick={onClick}
     >
-      {/* Бейдж типа изменения — только при наведении или выборе */}
+      {/* Бейдж — только при наведении */}
       <span
         className={`
           absolute right-2 top-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium
           opacity-0 group-hover:opacity-100 transition-opacity
-          ${isSelected ? "opacity-100" : ""}
           ${cfg.badge.cls}
         `}
       >
         {cfg.badge.text}
       </span>
 
-      {/* Номер раздела (маленький, серый) */}
-      <span className="text-[10px] text-gray-300 font-mono mr-2 select-none">
-        {result.sectionPath}
-      </span>
+      <span className="text-[10px] text-gray-300 font-mono mr-2 select-none">{result.sectionPath}</span>
 
-      {/* Текст */}
       <span className={textClass}>
         {result.changeType === "MODIFIED" && result.oldText && result.newText ? (
           <InlineWordDiff oldText={result.oldText} newText={result.newText} />
@@ -203,7 +263,6 @@ function DocParagraph({ result, isSelected, onHover, onClick }: DocParaProps) {
         )}
       </span>
 
-      {/* Бейдж риска */}
       {result.riskLevel && result.riskLevel !== "LOW" && (
         <span
           className={`
@@ -227,7 +286,6 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
   const [listExpanded, setListExpanded] = useState(false);
   const [showAllSections, setShowAllSections] = useState(false);
 
-  // Фильтрация
   const filtered = diffResults.filter((r) => {
     if (filters.riskLevels.length > 0 && r.riskLevel && !filters.riskLevels.includes(r.riskLevel))
       return false;
@@ -245,14 +303,11 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
     return true;
   });
 
-  // Для compliance/audit — скрываем OK-разделы по умолчанию
-  // Важно: не фильтруем по riskLevel !== LOW, иначе пропадают нарушения с LOW риском
   const isComplianceMode = mode === "compliance" || mode === "audit";
+  // Важно: не фильтруем по riskLevel !== LOW — нарушения с LOW-риском тоже должны показываться
   const displayResults =
     isComplianceMode && !showAllSections
-      ? filtered.filter(
-          (r) => r.changeType !== "AUDIT_OK" && r.changeType !== "COMPLIANT"
-        )
+      ? filtered.filter((r) => r.changeType !== "AUDIT_OK" && r.changeType !== "COMPLIANT")
       : filtered;
 
   const hiddenOkCount =
@@ -282,7 +337,7 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
 
   return (
     <div>
-      {/* Шапка счётчика + кнопка скрытых разделов */}
+      {/* Счётчик + кнопки показать/скрыть */}
       <div className="flex items-center justify-between mb-3 text-sm text-gray-500">
         <span>
           Показано <strong className="text-gray-800">{displayResults.length}</strong> из{" "}
@@ -307,9 +362,9 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
         )}
       </div>
 
-      {/* ── ДОКУМЕНТ — Word-like отображение ─────────────────────────── */}
+      {/* ── ДОКУМЕНТ — Word-like ──────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-        {/* Заголовок «документа» */}
+        {/* Строка заголовка */}
         <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
           <div className="flex gap-1.5">
             <span className="w-3 h-3 rounded-full bg-red-400" />
@@ -333,21 +388,16 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
           </div>
         </div>
 
-        {/* Страница документа */}
-        <div className="divide-y divide-gray-100">
+        {/* Параграфы документа */}
+        <div className="divide-y divide-gray-100 overflow-x-hidden">
           {displayResults.map((result, idx) => {
-            // Разделитель между несмежными секциями
             const prev = displayResults[idx - 1];
             const showDivider =
-              prev &&
-              !result.sectionPath.startsWith(prev.sectionPath.split(".")[0]);
-
+              prev && !result.sectionPath.startsWith(prev.sectionPath.split(".")[0]);
             return (
               <div key={result.id}>
                 {showDivider && (
-                  <div className="px-6 py-1 text-center text-[10px] text-gray-300 select-none">
-                    · · ·
-                  </div>
+                  <div className="px-6 py-1 text-center text-[10px] text-gray-300 select-none">· · ·</div>
                 )}
                 <DocParagraph
                   result={result}
@@ -361,7 +411,7 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
         </div>
       </div>
 
-      {/* ── Сворачиваемый список карточек ──────────────────────────────── */}
+      {/* ── Сворачиваемый список карточек ──────────────────────────── */}
       <div className="mt-4 border border-gray-200 rounded-xl overflow-hidden">
         <button
           onClick={() => setListExpanded((v) => !v)}
