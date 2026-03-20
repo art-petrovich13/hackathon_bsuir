@@ -1,8 +1,8 @@
 @import 'tailwindcss';
 
-/* Определяем кастомные цвета */
+/* ─── Кастомные цвета ────────────────────────────────────────────────────────── */
 @theme {
-  --color-primary-50: #f0f9ff;
+  --color-primary-50:  #f0f9ff;
   --color-primary-100: #e0f2fe;
   --color-primary-200: #bae6fd;
   --color-primary-300: #7dd3fc;
@@ -13,48 +13,390 @@
   --color-primary-800: #075985;
   --color-primary-900: #0c4a6e;
   --color-primary-950: #082f49;
-  --color-risk-low: #22c55e;
-  --color-risk-medium: #eab308;
-  --color-risk-high: #f97316;
+
+  --color-risk-low:      #22c55e;
+  --color-risk-medium:   #eab308;
+  --color-risk-high:     #f97316;
   --color-risk-critical: #ef4444;
-  --color-prosecutor: #dc2626;
-  --color-prosecutor-light: #fee2e2;
+
+  --color-prosecutor:        #dc2626;
+  --color-prosecutor-light:  #fee2e2;
   --color-prosecutor-border: #fca5a5;
 }
 
-
-/* Кастомные стили */
+/* ─── Base ───────────────────────────────────────────────────────────────────── */
 @layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
     font-family: Inter, system-ui, sans-serif;
+    min-height: 100vh;
+
+    /* Волнистый gradient-mesh фон */
+    background-color: #f0edf8;
+    background-image:
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.028'/%3E%3C/svg%3E"),
+      radial-gradient(ellipse 70% 50% at 5%  0%,   rgba(255,182,193,0.38) 0%, transparent 58%),
+      radial-gradient(ellipse 90% 55% at 75% 35%,  rgba(200,182,240,0.6)  0%, transparent 58%),
+      radial-gradient(ellipse 60% 40% at 95% 50%,  rgba(180,160,230,0.4)  0%, transparent 52%),
+      radial-gradient(ellipse 55% 45% at 10% 85%,  rgba(140,150,220,0.5)  0%, transparent 52%),
+      radial-gradient(ellipse 50% 35% at 45% 90%,  rgba(160,175,235,0.28) 0%, transparent 52%),
+      radial-gradient(ellipse 50% 60% at 40% 45%,  rgba(255,255,255,0.82) 0%, transparent 58%);
+    background-attachment: fixed;
+
+    position: relative;
+    isolation: isolate;
+  }
+
+  /* Зернистый оверлей */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.35;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+    background-size: 200px 200px;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+
+  /* Весь контент поверх псевдоэлементов body */
+  body > * {
+    position: relative;
+    z-index: 1;
   }
 
   * {
     @apply border-gray-200;
   }
+
+  /* Прозрачный хэдер */
+  header {
+    background: rgba(240, 237, 252, 0.6) !important;
+    backdrop-filter: blur(28px) saturate(1.8) !important;
+    -webkit-backdrop-filter: blur(28px) saturate(1.8) !important;
+    border-bottom: 1px solid rgba(255,255,255,0.65) !important;
+    box-shadow: 0 1px 0 rgba(180,170,230,0.15), inset 0 -1px 0 rgba(200,190,240,0.2) !important;
+  }
+
+  main {
+    background: transparent;
+  }
 }
 
+/* ─── Components ─────────────────────────────────────────────────────────────── */
 @layer components {
+
+  /* ── Карточка ────────────────────────────────────────────────────────────── */
   .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm;
+    background: rgba(255,255,255,0.52);
+    backdrop-filter: blur(28px) saturate(1.6);
+    -webkit-backdrop-filter: blur(28px) saturate(1.6);
+    border: 1px solid rgba(255,255,255,0.78);
+    border-radius: 16px;
+    box-shadow:
+      inset 0 1.5px 0 rgba(255,255,255,0.9),
+      inset 0 -1px 0  rgba(180,170,230,0.15),
+      0 4px 6px   rgba(120,100,200,0.05),
+      0 12px 36px rgba(100,80,180,0.09),
+      0 24px 60px rgba(80,60,160,0.06);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+
+    /* Диагональный gloss */
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.9) 30%, rgba(255,255,255,0.6) 70%, transparent);
+      pointer-events: none;
+    }
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow:
+        inset 0 1.5px 0 rgba(255,255,255,0.95),
+        0 8px 16px  rgba(120,100,200,0.1),
+        0 20px 48px rgba(100,80,180,0.14),
+        0 32px 72px rgba(80,60,160,0.08);
+    }
   }
 
+  /* ── Основная кнопка ─────────────────────────────────────────────────────── */
   .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium 
-           px-4 py-2 rounded-lg transition-colors duration-150 
-           disabled:opacity-50 disabled:cursor-not-allowed;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.25rem;
+    border-radius: 100px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+
+    /* Фиолетовый gradient */
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.25);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.3),
+      0 4px 16px rgba(109,40,217,0.35),
+      0 1px 4px  rgba(109,40,217,0.2);
+
+    /* Shimmer */
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15) 50%, transparent);
+      background-size: 300% 100%;
+      animation: btn-shimmer 2.8s ease infinite;
+    }
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.35),
+        0 8px 24px rgba(109,40,217,0.45),
+        0 2px 8px  rgba(109,40,217,0.25);
+    }
+
+    &:active { transform: translateY(0); }
+
+    &:disabled {
+      background: rgba(200,195,230,0.5);
+      backdrop-filter: blur(8px);
+      color: rgba(100,90,150,0.5);
+      border-color: rgba(200,195,230,0.6);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+      cursor: not-allowed;
+      transform: none;
+
+      &::before { display: none; }
+    }
   }
 
+  /* ── Вторичная кнопка ────────────────────────────────────────────────────── */
   .btn-secondary {
-    @apply bg-white hover:bg-gray-50 text-gray-700 font-medium 
-           px-4 py-2 rounded-lg border border-gray-300 
-           transition-colors duration-150;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.1rem;
+    border-radius: 100px;
+    font-weight: 500;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    color: #3b2d70;
+    border: 1px solid rgba(255,255,255,0.75);
+    box-shadow:
+      inset 0 1.5px 0 rgba(255,255,255,0.85),
+      0 2px 10px rgba(100,80,180,0.1),
+      0 1px 3px  rgba(100,80,180,0.07);
+
+    &:hover {
+      background: rgba(255,255,255,0.72);
+      transform: translateY(-1px);
+      box-shadow:
+        inset 0 1.5px 0 rgba(255,255,255,0.9),
+        0 4px 16px rgba(100,80,180,0.15),
+        0 1px 4px  rgba(100,80,180,0.1);
+    }
+
+    &:active { transform: translateY(0); }
   }
-  
+
+  /* ── Кнопка-иконка ───────────────────────────────────────────────────────── */
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+
+    background: rgba(255,255,255,0.5);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.72);
+    color: #4a3880;
+    box-shadow: inset 0 1.5px 0 rgba(255,255,255,0.85), 0 2px 8px rgba(100,80,180,0.09);
+
+    &:hover {
+      background: rgba(255,255,255,0.7);
+      box-shadow: inset 0 1.5px 0 rgba(255,255,255,0.9), 0 4px 12px rgba(100,80,180,0.14);
+    }
+
+    &:disabled {
+      opacity: 0.32;
+      cursor: not-allowed;
+    }
+  }
+
+  /* ── Переключатель режимов (mode tab) ────────────────────────────────────── */
+  .btn-mode {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: 14px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+
+    background: rgba(255,255,255,0.38);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.6);
+    color: #4a3880;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.75), 0 2px 8px rgba(100,80,180,0.07);
+
+    &:hover {
+      background: rgba(255,255,255,0.55);
+      transform: translateY(-1px);
+    }
+
+    &.active {
+      background: rgba(245, 240, 255, 0.75);
+      border-color: rgba(124, 58, 237, 0.6);
+      color: #5b21b6;
+      box-shadow:
+        inset 0 1.5px 0 rgba(255,255,255,0.95),
+        0 0 0 2px rgba(124, 58, 237, 0.18),
+        0 4px 16px rgba(109, 40, 217, 0.2),
+        0 1px 4px rgba(109, 40, 217, 0.12);
+    }
+  }
+
+  /* ── Инпут ────────────────────────────────────────────────────────────────── */
+  .input-glass {
+    width: 100%;
+    padding: 0.6rem 0.9rem;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    color: #2d1060;
+    outline: none;
+    transition: all 0.2s ease;
+
+    background: rgba(255,255,255,0.5);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.7);
+    box-shadow: inset 0 1.5px 0 rgba(255,255,255,0.8), inset 0 -1px 0 rgba(180,170,220,0.15), 0 2px 8px rgba(100,80,180,0.07);
+
+    &::placeholder { color: rgba(100,80,160,0.45); }
+
+    &:focus {
+      background: rgba(255,255,255,0.68);
+      border-color: rgba(124,58,237,0.45);
+      box-shadow:
+        inset 0 1.5px 0 rgba(255,255,255,0.9),
+        0 0 0 3px rgba(124,58,237,0.12),
+        0 2px 8px rgba(100,80,180,0.1);
+    }
+  }
+
+  /* ── Бейдж / пилюля ──────────────────────────────────────────────────────── */
+  .badge-glass {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.22rem 0.65rem;
+    border-radius: 100px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.7);
+    color: #4a3880;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+
+  /* ── Алерт / инфо-блок ───────────────────────────────────────────────────── */
+  .alert-glass {
+    padding: 0.75rem 1rem;
+    border-radius: 14px;
+    font-size: 0.875rem;
+
+    background: rgba(255,255,255,0.45);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.65);
+    box-shadow: inset 0 1.5px 0 rgba(255,255,255,0.8), 0 2px 10px rgba(100,80,180,0.07);
+
+    &.alert-red {
+      background: rgba(255,220,220,0.45);
+      border-color: rgba(220,100,100,0.35);
+      color: #7a1515;
+    }
+    &.alert-orange {
+      background: rgba(255,230,200,0.45);
+      border-color: rgba(220,140,80,0.35);
+      color: #7a3a00;
+    }
+    &.alert-green {
+      background: rgba(210,245,225,0.45);
+      border-color: rgba(80,180,120,0.35);
+      color: #0f4d2a;
+    }
+    &.alert-blue {
+      background: rgba(210,230,255,0.45);
+      border-color: rgba(90,140,230,0.35);
+      color: #0f2d6e;
+    }
+    &.alert-purple {
+      background: rgba(225,215,255,0.45);
+      border-color: rgba(130,100,220,0.35);
+      color: #2d1060;
+    }
+  }
+
+  /* ── Полоска прогресса ───────────────────────────────────────────────────── */
+  .progress-glass {
+    height: 6px;
+    border-radius: 6px;
+    background: rgba(180,170,220,0.25);
+    border: 1px solid rgba(255,255,255,0.5);
+    overflow: hidden;
+
+    > div {
+      height: 100%;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #7c3aed, #a855f7);
+      box-shadow: 0 0 8px rgba(124,58,237,0.4);
+      transition: width 0.4s ease;
+    }
+  }
+
+  /* ── Разделитель ─────────────────────────────────────────────────────────── */
+  .divider-glass {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(180,170,230,0.4) 30%, rgba(200,190,240,0.5) 50%, rgba(180,170,230,0.4) 70%, transparent);
+    border: none;
+    margin: 0.5rem 0;
+  }
+
+  /* ── Shimmer keyframe ────────────────────────────────────────────────────── */
+  @keyframes btn-shimmer {
+    0%   { background-position: -300% center; }
+    100% { background-position:  300% center; }
+  }
 }

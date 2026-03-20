@@ -39,7 +39,7 @@ export default function CompliancePage() {
   const criticalHigh  = comparison.diffResults?.filter((r) => r.riskLevel === "HIGH" || r.riskLevel === "CRITICAL") ?? [];
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-5xl mx-auto px-4 py-6 overflow-x-hidden">
       {/* Шапка */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">

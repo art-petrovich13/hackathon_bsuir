@@ -97,6 +97,9 @@ interface DocParagraphProps {
   onClick: () => void;
 }
 
+// Цвет фона страницы — используется для concave-уголков
+const PAGE_BG = "rgb(240, 237, 252)";
+
 function DocParagraph({ result, isSelected, onHover, onClick }: DocParagraphProps) {
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -110,11 +113,91 @@ function DocParagraph({ result, isSelected, onHover, onClick }: DocParagraphProp
       ? CHANGE_CONFIG[result.changeType as keyof typeof CHANGE_CONFIG]
       : undefined) ?? CHANGE_CONFIG.MODIFIED;
 
+  if (isSelected) {
+    return (
+      // Обёртка нужна чтобы concave-уголки не перекрывали соседей
+      <div className="relative" style={{ zIndex: 2, marginRight: "-1rem" }}>
+
+        {/* Верхний вогнутый угол */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            top: -14,
+            right: 0,
+            width: 14,
+            height: 14,
+            background: "transparent",
+            borderBottomRightRadius: 10,
+            // box-shadow рисует цвет СТРАНИЦЫ поверх фиолетового — создаёт вогнутость
+            boxShadow: `4px 4px 0 4px ${PAGE_BG}`,
+            pointerEvents: "none",
+            zIndex: 3,
+          }}
+        />
+
+        {/* Нижний вогнутый угол */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            bottom: -14,
+            right: 0,
+            width: 14,
+            height: 14,
+            background: "transparent",
+            borderTopRightRadius: 10,
+            boxShadow: `4px -4px 0 4px ${PAGE_BG}`,
+            pointerEvents: "none",
+            zIndex: 3,
+          }}
+        />
+
+        {/* Сама строка */}
+        <div
+          className="px-4 py-3 cursor-pointer transition-all duration-200"
+          style={{
+            background: "linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%)",
+            borderRadius: "10px 0 0 10px",
+            boxShadow: "0 4px 20px rgba(109, 40, 217, 0.35)",
+          }}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          onClick={onClick}
+        >
+          <div className="flex items-center gap-2 mb-1.5">
+            <code className="text-xs text-violet-200 font-mono">п. {result.sectionPath}</code>
+            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-white/20 text-white border border-white/30">
+              {config.badge.text}
+            </span>
+            {result.riskLevel && result.riskLevel !== "LOW" && (
+              <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-white/20 text-white border border-white/25">
+                {result.riskLevel}
+              </span>
+            )}
+            <span className="ml-auto text-xs text-violet-300 italic">открыто →</span>
+          </div>
+
+          {result.changeType === "MODIFIED" && result.oldText && result.newText ? (
+            <InlineWordDiff oldText={result.oldText} newText={result.newText} />
+          ) : result.changeType === "DELETED" ? (
+            <span className="text-sm leading-relaxed text-white/80 line-through">
+              {result.oldText}
+            </span>
+          ) : (
+            <span className="text-sm leading-relaxed text-white">
+              {result.newText ?? result.oldText ?? "—"}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Обычное (не выбранное) состояние — без изменений
   return (
     <div
-      className={`px-4 py-3 rounded-r-lg cursor-pointer transition-all duration-150 ${config.bgClass} ${
-        isSelected ? "ring-2 ring-primary-400 ring-offset-1" : ""
-      }`}
+      className={`px-4 py-3 rounded-r-lg cursor-pointer transition-all duration-150 ${config.bgClass}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onClick={onClick}
@@ -177,7 +260,6 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
     return true;
   });
 
-  // Для compliance/audit — по умолчанию скрываем "зелёные" OK записи
   const displayResults =
     (mode === "compliance" || mode === "audit") && !showAllSections
       ? filtered.filter(
@@ -221,7 +303,7 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
         <span className="font-semibold text-gray-800">{diffResults.length}</span> разделов
       </p>
 
-      {/* Кнопка показать OK разделы (только для compliance/audit) */}
+      {/* Кнопка показать OK разделы */}
       {(mode === "compliance" || mode === "audit") && hiddenOkCount > 0 && (
         <div className="flex items-center justify-between mb-2 p-2 bg-green-50 border border-green-200 rounded-lg">
           <p className="text-xs text-green-700">
@@ -236,7 +318,7 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
         </div>
       )}
 
-      {/* Кнопка скрыть (когда showAll=true) */}
+      {/* Кнопка скрыть */}
       {(mode === "compliance" || mode === "audit") && showAllSections && hiddenOkCount >= 0 && (
         <div className="flex items-center justify-end mb-2">
           <button
@@ -249,7 +331,7 @@ export default function DocViewer({ diffResults, mode = "compare" }: DocViewerPr
       )}
 
       {/* Список параграфов */}
-      <div className="space-y-1">
+      <div className="space-y-1 overflow-x-hidden">
         {displayResults.map((result) => (
           <DocParagraph
             key={result.id}
