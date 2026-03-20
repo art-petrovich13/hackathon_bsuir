@@ -2,6 +2,7 @@
 import type { DiffResult } from "../../types";
 import RiskBadge from "../risk/RiskBadge";
 import ChangeMarker from "./ChangeMarker";
+import { computeWordDiff } from "../../utils/wordDiff";
 
 interface DiffBlockProps {
   result: DiffResult;
@@ -23,78 +24,7 @@ const CHANGE_TYPE_CONFIG = {
  * Использует простой алгоритм LCS (Longest Common Subsequence) на словах.
  * Бэкенд тоже отдаёт word_diff, но его нет в текущей схеме API — считаем на клиенте.
  */
-function computeWordDiff(oldText: string, newText: string): Array<{
-  tag: "equal" | "replace" | "insert" | "delete";
-  oldWords: string[];
-  newWords: string[];
-}> {
-  const oldWords = oldText.split(/\s+/).filter(Boolean);
-  const newWords = newText.split(/\s+/).filter(Boolean);
 
-  // Простой LCS для слов
-  const dp: number[][] = Array(oldWords.length + 1)
-    .fill(null)
-    .map(() => Array(newWords.length + 1).fill(0));
-
-  for (let i = 1; i <= oldWords.length; i++) {
-    for (let j = 1; j <= newWords.length; j++) {
-      if (oldWords[i - 1] === newWords[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-      }
-    }
-  }
-
-  // Восстановить путь
-  const result: Array<{ tag: "equal" | "replace" | "insert" | "delete"; oldWords: string[]; newWords: string[] }> = [];
-  let i = oldWords.length;
-  let j = newWords.length;
-  const ops: Array<{ tag: "equal" | "insert" | "delete"; i: number; j: number }> = [];
-
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldWords[i - 1] === newWords[j - 1]) {
-      ops.unshift({ tag: "equal", i: i - 1, j: j - 1 });
-      i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      ops.unshift({ tag: "insert", i, j: j - 1 });
-      j--;
-    } else {
-      ops.unshift({ tag: "delete", i: i - 1, j });
-      i--;
-    }
-  }
-
-  // Группировать последовательные операции
-  let k = 0;
-  while (k < ops.length) {
-    const op = ops[k];
-    if (op.tag === "equal") {
-      result.push({ tag: "equal", oldWords: [oldWords[op.i]], newWords: [newWords[op.j]] });
-      k++;
-    } else {
-      // Собрать подряд идущие delete + insert в replace
-      const delWords: string[] = [];
-      const insWords: string[] = [];
-      while (k < ops.length && ops[k].tag === "delete") {
-        delWords.push(oldWords[ops[k].i]);
-        k++;
-      }
-      while (k < ops.length && ops[k].tag === "insert") {
-        insWords.push(newWords[ops[k].j]);
-        k++;
-      }
-      if (delWords.length > 0 && insWords.length > 0) {
-        result.push({ tag: "replace", oldWords: delWords, newWords: insWords });
-      } else if (delWords.length > 0) {
-        result.push({ tag: "delete", oldWords: delWords, newWords: [] });
-      } else {
-        result.push({ tag: "insert", oldWords: [], newWords: insWords });
-      }
-    }
-  }
-  return result;
-}
 
 /** Рендерит старую версию текста с подсветкой удалённых слов */
 function OldTextWithDiff({ oldText, newText }: { oldText: string; newText: string }) {
@@ -131,7 +61,10 @@ function NewTextWithDiff({ oldText, newText }: { oldText: string; newText: strin
 // ─── Основной компонент ───────────────────────────────────────────────────────
 
 export default function DiffBlock({ result, isSelected, onClick }: DiffBlockProps) {
-  const config = CHANGE_TYPE_CONFIG[result.changeType] ?? CHANGE_TYPE_CONFIG.MODIFIED;
+  const config =
+  (result.changeType in CHANGE_TYPE_CONFIG
+    ? CHANGE_TYPE_CONFIG[result.changeType as keyof typeof CHANGE_TYPE_CONFIG]
+    : undefined) ?? CHANGE_TYPE_CONFIG.MODIFIED;
 
   const hasWordDiff =
     result.changeType === "MODIFIED" &&

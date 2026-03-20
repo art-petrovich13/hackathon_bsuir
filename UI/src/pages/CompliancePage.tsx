@@ -1,12 +1,10 @@
 // src/pages/CompliancePage.tsx
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Shield, AlertTriangle, CheckCircle2, Clock, Loader2 } from "lucide-react";
+import { ArrowLeft, Shield, CheckCircle2} from "lucide-react";
 import { useComparison } from "../hooks/useComparison";
-import { useUiStore } from "../store/uiStore";
 import ProgressStepper from "../components/upload/ProgressStepper";
 import DocViewer from "../components/diff/DocViewer";
 import SidePanel from "../components/diff/SidePanel";
-import type { DiffResult } from "../types";
 
 export default function CompliancePage() {
   const { id } = useParams<{ id: string }>();
