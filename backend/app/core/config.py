@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
 
     openrouter_api_key: str = ""
+    
+    openrouter_model: str = "arcee-ai/trinity-large-preview:free"
 
     # Безопасность
     secret_key: str = "change_me"
@@ -32,6 +34,8 @@ class Settings(BaseSettings):
 
     # Версия приложения
     app_version: str = "0.1.0"
+
+
 
 
 # Глобальный экземпляр — импортируй его везде:

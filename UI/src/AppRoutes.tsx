@@ -9,6 +9,9 @@ const ComparePage    = lazy(() => import("./pages/ComparePage"));
 const ReportPage     = lazy(() => import("./pages/ReportPage"));
 const ProsecutorPage = lazy(() => import("./pages/ProsecutorPage"));
 const NotFoundPage   = lazy(() => import("./pages/NotFoundPage"));
+const ChainComparePage = lazy(() => import("./pages/ChainComparePage"));
+const CompliancePage = lazy(() => import("./pages/CompliancePage"));
+const AuditPage      = lazy(() => import("./pages/AuditPage"));
 
 // Лоадер пока страница грузится
 function PageLoader() {
@@ -42,6 +45,10 @@ export default function AppRoutes() {
 
           {/* Страница отчёта */}
           <Route path="report/:id" element={<ReportPage />} />
+
+          <Route path="chain/:chainId" element={<ChainComparePage />} />
+          <Route path="compliance/:id" element={<CompliancePage />} />
+          <Route path="audit/:id"      element={<AuditPage />} />
 
           {/* 404 */}
           <Route path="*" element={<NotFoundPage />} />

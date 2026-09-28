@@ -4,22 +4,27 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.api import upload_router, compare_router, report_router, npa_router, ws_router
-from app.api.compare import router as compare_ws_router
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+from app.core.logging import setup_logging
+setup_logging(debug=settings.debug)
+
+# ← сначала создать app
 app = FastAPI(
     title="NPA Assistant API",
     description="AI-ассистент сравнения НПА/ЛНА с модулем ПРОКУРОР",
     version=settings.app_version,
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_tags=[
-        {"name": "System",   "description": "Системные эндпоинты"},
-        {"name": "Upload",   "description": "Загрузка документов"},
-        {"name": "Compare",  "description": "Сравнение и AI анализ"},
-        {"name": "Report",   "description": "Генерация отчётов"},
-        {"name": "NPA",      "description": "База знаний НПА Беларуси"},
-    ],
 )
+
+# ← только потом подключать limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,7 +34,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Подключаем все роутеры
 app.include_router(upload_router)
 app.include_router(compare_router)
 app.include_router(report_router)

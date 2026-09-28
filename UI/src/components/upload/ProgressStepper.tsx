@@ -18,24 +18,25 @@ const STEPS: Step[] = [
 
 interface ProgressStepperProps {
   comparisonId: string;
+  currentStatus?: string;   // статус из REST-поллинга (useComparison) — надёжный fallback
   onDone?: () => void;
 }
 
-export default function ProgressStepper({ comparisonId, onDone }: ProgressStepperProps) {
-  const [currentStatus, setCurrentStatus] = useState<string>("PENDING");
+export default function ProgressStepper({ comparisonId, currentStatus: polledStatus, onDone }: ProgressStepperProps) {
+  // Инициализируем из REST-статуса если он уже есть (например ANALYZING)
+  const [currentStatus, setCurrentStatus] = useState<string>(polledStatus ?? "PENDING");
   const [message, setMessage] = useState<string>("Ожидание...");
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     if (!comparisonId) return;
 
-    // Подключиться к WebSocket
     const wsUrl = `ws://localhost:8000/ws/compare/${comparisonId}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      setCurrentStatus("PARSING");
-      setMessage("Подключено. Ожидаем начала обработки...");
+      // НЕ сбрасываем статус — используем polledStatus как начальное значение
+      setMessage("Подключено. Ожидаем обновлений...");
     };
 
     ws.onmessage = (event) => {
@@ -58,7 +59,6 @@ export default function ProgressStepper({ comparisonId, onDone }: ProgressSteppe
     };
 
     ws.onerror = () => {
-      // WebSocket ещё не готов или недоступен — fallback на polling
       setMessage("Обрабатываем...");
     };
 
@@ -70,6 +70,13 @@ export default function ProgressStepper({ comparisonId, onDone }: ProgressSteppe
       ws.close();
     };
   }, [comparisonId, onDone]);
+
+  // Синхронизировать с REST-статусом пока WS не подключён или не даёт обновлений
+  useEffect(() => {
+    if (polledStatus && polledStatus !== "DONE" && polledStatus !== "ERROR") {
+      setCurrentStatus(polledStatus);
+    }
+  }, [polledStatus]);
 
   const getStepIndex = (status: string): number => {
     const map: Record<string, number> = {
@@ -85,7 +92,7 @@ export default function ProgressStepper({ comparisonId, onDone }: ProgressSteppe
       <h3 className="text-sm font-semibold text-gray-700 mb-4">Прогресс анализа</h3>
 
       {/* Шаги */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center">
         {STEPS.map((step, i) => {
           const isDone = i < activeIndex || (currentStatus === "DONE" && i === 3);
           const isActive = i === activeIndex && currentStatus !== "DONE";
@@ -123,7 +130,7 @@ export default function ProgressStepper({ comparisonId, onDone }: ProgressSteppe
 
               {/* Линия соединения (кроме последнего шага) */}
               {i < STEPS.length - 1 && (
-                <div className="flex-1 h-0.5 mb-5 rounded-full bg-gray-200 overflow-hidden">
+                <div className="flex-1 h-0.5 mb-4 mx-1 rounded-full bg-gray-200 overflow-hidden">
                   <div
                     className={`h-full bg-green-500 transition-all duration-700 ${
                       i < activeIndex ? "w-full" : "w-0"
